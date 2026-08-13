@@ -185,6 +185,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   came up, and a path on a machine nothing here has a link to — or one a pane's
   shell has `ssh`'d away to — is shown in full rather than against a home that
   is not its own. (#580)
+- **Push at a detached HEAD no longer fails silently** — the sync tile claimed
+  "Publish Branch" (the one thing a detached HEAD cannot do) and swallowed the
+  click, and the key binding, palette and "Commit and Push" follow-up died in
+  the same guard just as quietly. The tile and the branch menu's Push item now
+  disable themselves with a tooltip that says why, every other path gets a
+  toast naming the reason, and an unborn branch — no commits to send yet —
+  gets its own answer instead of sharing the detached one's silence. (#545)
+- **A refused commit says why, not always "Nothing to commit"** — committing
+  from the palette or the key binding with staged work but a blank message was
+  answered with "Nothing to commit", which sends the user staging files they
+  already staged; the toast now carries the plan's actual reason ("Write a
+  commit message first"), the same words the panel's own button shows on its
+  tooltip. (#546)
 
 ## [26.8.3] - 2026-08-12
 
