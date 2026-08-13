@@ -46,7 +46,8 @@ mod macos {
                 let stage = next_path(&mut args)?;
                 let expected_version = next_string(&mut args)?;
                 let log = next_path(&mut args)?;
-                reject_extra(args)?;
+                let options = tail_options(args)?;
+                options.apply();
                 install(InstallPlan {
                     parent_pid,
                     current,
@@ -56,6 +57,7 @@ mod macos {
                     stage,
                     expected_version,
                     log,
+                    result_file: options.result_file,
                 })
             }
             _ => Err(usage()),
@@ -66,7 +68,8 @@ mod macos {
         "usage: tty7-updater verify <current.app> <archive.zip> <checksums.txt> \
          <asset-name> <stage-dir> <version>\n\
          or: tty7-updater install <parent-pid> <current.app> <archive.zip> <checksums.txt> \
-         <asset-name> <stage-dir> <version> <log-path>"
+         <asset-name> <stage-dir> <version> <log-path> \
+         [--config-dir <dir>] [--result-file <path>]"
             .to_string()
     }
 
@@ -88,6 +91,65 @@ mod macos {
         }
     }
 
+    /// The named options an install verb takes after its positional
+    /// arguments. See the Windows half of this file for why these are
+    /// arguments and not the environment.
+    #[derive(Default)]
+    struct TailOptions {
+        config_dir: Option<PathBuf>,
+        result_file: Option<PathBuf>,
+    }
+
+    fn tail_options(
+        mut args: impl Iterator<Item = std::ffi::OsString>,
+    ) -> Result<TailOptions, String> {
+        let mut options = TailOptions::default();
+        while let Some(arg) = args.next() {
+            match arg.to_str() {
+                Some("--config-dir") => options.config_dir = Some(next_path(&mut args)?),
+                Some("--result-file") => options.result_file = Some(next_path(&mut args)?),
+                _ => return Err(usage()),
+            }
+        }
+        Ok(options)
+    }
+
+    impl TailOptions {
+        fn apply(&self) {
+            let Some(dir) = &self.config_dir else { return };
+            tty7_core::core::config::set_config_dir(dir.clone());
+            // Re-exported so the relaunched app — a child of this process —
+            // keeps answering for the same config directory. Safe here:
+            // argument parsing runs before any thread exists.
+            unsafe { std::env::set_var("TTY7_CONFIG_DIR", dir) };
+        }
+    }
+
+    /// The terminal outcome of the attempt, for the next GUI launch to merge
+    /// into the update state (#540). Best-effort, like every log line here.
+    fn report_outcome(
+        result_file: Option<&Path>,
+        log: &Path,
+        version: &str,
+        result: &Result<(), String>,
+    ) {
+        let Some(path) = result_file else { return };
+        let outcome = tty7_core::daemon::install::outcome::UpdateOutcome {
+            version: version.to_string(),
+            ok: result.is_ok(),
+            detail: result.as_ref().err().cloned(),
+        };
+        if let Err(error) = tty7_core::daemon::install::outcome::write_outcome(path, &outcome) {
+            log_line(
+                log,
+                &format!(
+                    "could not record the update outcome at {}: {error}",
+                    path.display()
+                ),
+            );
+        }
+    }
+
     struct InstallPlan {
         parent_pid: u32,
         current: PathBuf,
@@ -97,9 +159,14 @@ mod macos {
         stage: PathBuf,
         expected_version: String,
         log: PathBuf,
+        result_file: Option<PathBuf>,
     }
 
     fn install(plan: InstallPlan) -> Result<(), String> {
+        install_inner(&plan)
+    }
+
+    fn install_inner(plan: &InstallPlan) -> Result<(), String> {
         let replacement = plan.stage.join("unpacked/tty7.app");
         wait_for_exit(plan.parent_pid);
         log_line(&plan.log, "re-verifying staged tty7 update");
@@ -108,11 +175,29 @@ mod macos {
         if let Err(error) = verification {
             log_line(&plan.log, &error);
             let _ = fs::remove_dir_all(&plan.stage);
+            let result = Err(error);
+            // The outcome lands before the old app does: the relaunched GUI
+            // merges it at startup, and a write afterward races that merge
+            // (#540).
+            report_outcome(
+                plan.result_file.as_deref(),
+                &plan.log,
+                &plan.expected_version,
+                &result,
+            );
             let _ = launch_app(&plan.current);
-            return Err(error);
+            return result;
         }
         log_line(&plan.log, &format!("replacing {}", plan.current.display()));
-        replace_and_relaunch(&plan.current, &replacement, &plan.stage, launch_app)
+        let report = |result: &Result<(), String>| {
+            report_outcome(
+                plan.result_file.as_deref(),
+                &plan.log,
+                &plan.expected_version,
+                result,
+            );
+        };
+        replace_and_relaunch(&plan.current, &replacement, &plan.stage, launch_app, report)
             .inspect_err(|error| log_line(&plan.log, error))
     }
 
@@ -219,6 +304,7 @@ mod macos {
         replacement: &Path,
         stage: &Path,
         launch: impl Fn(&Path) -> Result<(), String>,
+        report: impl Fn(&Result<(), String>),
     ) -> Result<(), String> {
         // The staging directory is a fresh TempDir created beside the current
         // bundle, so a backup here stays on the same filesystem without using a
@@ -227,33 +313,55 @@ mod macos {
         // update (or simply an unrelated user-owned path).
         let backup = stage.join("previous.app");
         if backup.exists() {
-            return Err(format!(
+            let result = Err(format!(
                 "the update staging backup already exists: {}",
                 backup.display()
             ));
+            report(&result);
+            return result;
         }
-        fs::rename(current, &backup)
-            .map_err(|error| format!("moving the current app aside: {error}"))?;
+        if let Err(error) = fs::rename(current, &backup) {
+            let result = Err(format!("moving the current app aside: {error}"));
+            report(&result);
+            return result;
+        }
 
         if let Err(error) = fs::rename(replacement, current) {
             let _ = fs::rename(&backup, current);
             let _ = fs::remove_dir_all(stage);
-            return Err(format!("putting the staged app in place: {error}"));
+            let result = Err(format!("putting the staged app in place: {error}"));
+            report(&result);
+            return result;
         }
 
         match launch(current) {
             Ok(()) => {
                 let _ = remove_path(&backup);
                 let _ = fs::remove_dir_all(stage);
-                Ok(())
+                let result = Ok(());
+                report(&result);
+                result
             }
             Err(error) => {
                 let _ = remove_path(current);
-                fs::rename(&backup, current)
-                    .map_err(|restore| format!("{error}; restoring the previous app: {restore}"))?;
-                let _ = fs::remove_dir_all(stage);
-                let _ = launch(current);
-                Err(error)
+                let (result, relaunch) = match fs::rename(&backup, current) {
+                    Ok(()) => {
+                        let _ = fs::remove_dir_all(stage);
+                        (Err(error), true)
+                    }
+                    Err(restore) => (
+                        Err(format!("{error}; restoring the previous app: {restore}")),
+                        false,
+                    ),
+                };
+                // The outcome lands before the old app does: the relaunched GUI
+                // merges it at startup, and a write afterward races that merge
+                // (#540).
+                report(&result);
+                if relaunch {
+                    let _ = launch(current);
+                }
+                result
             }
         }
     }
@@ -360,7 +468,7 @@ mod macos {
             bundle(&current, "old");
             bundle(&replacement, "new");
 
-            replace_and_relaunch(&current, &replacement, &stage, |_| Ok(())).unwrap();
+            replace_and_relaunch(&current, &replacement, &stage, |_| Ok(()), |_| ()).unwrap();
 
             assert_eq!(fs::read_to_string(current.join("marker")).unwrap(), "new");
             assert!(!stage.exists());
@@ -376,19 +484,30 @@ mod macos {
             bundle(&current, "old");
             bundle(&replacement, "new");
             let launches = std::cell::Cell::new(0);
+            let reported_after_launches = std::cell::Cell::new(usize::MAX);
 
-            let error = replace_and_relaunch(&current, &replacement, &stage, |_| {
-                launches.set(launches.get() + 1);
-                if launches.get() == 1 {
-                    Err("new app failed".to_string())
-                } else {
-                    Ok(())
-                }
-            })
+            let error = replace_and_relaunch(
+                &current,
+                &replacement,
+                &stage,
+                |_| {
+                    launches.set(launches.get() + 1);
+                    if launches.get() == 1 {
+                        Err("new app failed".to_string())
+                    } else {
+                        Ok(())
+                    }
+                },
+                |_| reported_after_launches.set(launches.get()),
+            )
             .unwrap_err();
 
             assert_eq!(error, "new app failed");
             assert_eq!(launches.get(), 2);
+            // The outcome is reported after the failed first launch but before
+            // the old app comes back — the relaunched GUI must find it already
+            // on disk at startup (#540).
+            assert_eq!(reported_after_launches.get(), 1);
             assert_eq!(fs::read_to_string(current.join("marker")).unwrap(), "old");
             assert!(!stage.exists());
         }
@@ -404,7 +523,7 @@ mod macos {
             bundle(&replacement, "new");
             bundle(&sibling, "keep");
 
-            replace_and_relaunch(&current, &replacement, &stage, |_| Ok(())).unwrap();
+            replace_and_relaunch(&current, &replacement, &stage, |_| Ok(()), |_| ()).unwrap();
 
             assert_eq!(fs::read_to_string(current.join("marker")).unwrap(), "new");
             assert_eq!(fs::read_to_string(sibling.join("marker")).unwrap(), "keep");
@@ -483,15 +602,18 @@ mod windows {
     use std::process::{Child, Command, ExitStatus, Stdio};
     use std::ptr::null_mut;
     use std::thread;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use smol::io::AsyncReadExt as _;
 
+    use tty7_core::daemon::install::outcome::UpdateOutcome;
     use windows_sys::Win32::Foundation::{
-        CloseHandle, ERROR_INVALID_PARAMETER, GetLastError, HANDLE, WAIT_FAILED,
+        CloseHandle, ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER, GetLastError, HANDLE, LocalFree,
+        WAIT_FAILED, WAIT_TIMEOUT,
     };
     use windows_sys::Win32::Storage::FileSystem::{
-        GetFileVersionInfoSizeW, GetFileVersionInfoW, VS_FIXEDFILEINFO, VerQueryValueW,
+        CreateDirectoryW, GetFileVersionInfoSizeW, GetFileVersionInfoW, VS_FIXEDFILEINFO,
+        VerQueryValueW,
     };
     use windows_sys::Win32::System::Threading::{
         INFINITE, OpenProcess, PROCESS_SYNCHRONIZE, WaitForSingleObject,
@@ -575,7 +697,8 @@ mod windows {
                 let expected_version = next_string(&mut args)?;
                 let log = next_path(&mut args)?;
                 let stage = next_path(&mut args)?;
-                reject_extra(args)?;
+                let options = tail_options(args)?;
+                options.apply();
                 install(InstallPlan {
                     parent_pid,
                     installer,
@@ -585,6 +708,8 @@ mod windows {
                     expected_version,
                     log,
                     stage,
+                    result_file: options.result_file,
+                    expected_sha256: None,
                 })
             }
             "install-portable" => {
@@ -598,7 +723,8 @@ mod windows {
                 let expected_version = next_string(&mut args)?;
                 let log = next_path(&mut args)?;
                 let stage = next_path(&mut args)?;
-                reject_extra(args)?;
+                let options = tail_options(args)?;
+                options.apply();
                 install_portable(PortableInstallPlan {
                     parent_pid,
                     archive,
@@ -608,6 +734,7 @@ mod windows {
                     expected_version,
                     log,
                     stage,
+                    result_file: options.result_file,
                 })
             }
             "cleanup" => {
@@ -620,6 +747,90 @@ mod windows {
                 fs::remove_dir_all(&stage)
                     .map_err(|error| format!("removing {}: {error}", stage.display()))
             }
+            "capabilities" => {
+                reject_extra(args)?;
+                // One token per line. The GUI reads this to learn whether the
+                // *installed* updater — the binary a UAC prompt would point
+                // at — speaks the elevation verbs; a build that predates them
+                // exits with the usage error above instead, which is the same
+                // answer (#504).
+                for capability in ELEVATION_CAPABILITIES {
+                    println!("{capability}");
+                }
+                Ok(())
+            }
+            "elevated-stage" => {
+                let gui_pid = next_string(&mut args)?
+                    .parse::<u32>()
+                    .map_err(|_| "gui pid is not an unsigned integer".to_string())?;
+                let installer = next_path(&mut args)?;
+                let asset_name = next_string(&mut args)?;
+                let install_dir = next_path(&mut args)?;
+                let expected_version = next_string(&mut args)?;
+                let log = next_path(&mut args)?;
+                let stage = next_path(&mut args)?;
+                let options = tail_options(args)?;
+                options.apply();
+                let (Some(expected_sha256), Some(status_file)) =
+                    (options.expected_sha256, options.status_file)
+                else {
+                    return Err(usage());
+                };
+                elevated_stage(ElevatedStagePlan {
+                    gui_pid,
+                    installer,
+                    asset_name,
+                    install_dir,
+                    expected_version,
+                    log,
+                    stage,
+                    expected_sha256,
+                    status_file,
+                    result_file: options.result_file,
+                    config_dir: options.config_dir,
+                })
+            }
+            "install-elevated" => {
+                let parent_pid = next_string(&mut args)?
+                    .parse::<u32>()
+                    .map_err(|_| "parent pid is not an unsigned integer".to_string())?;
+                let installer = next_path(&mut args)?;
+                let checksums = next_path(&mut args)?;
+                let asset_name = next_string(&mut args)?;
+                let install_dir = next_path(&mut args)?;
+                let expected_version = next_string(&mut args)?;
+                let log = next_path(&mut args)?;
+                let stage = next_path(&mut args)?;
+                let options = tail_options(args)?;
+                options.apply();
+                let Some(expected_sha256) = options.expected_sha256 else {
+                    return Err(usage());
+                };
+                install_elevated(InstallPlan {
+                    parent_pid,
+                    installer,
+                    checksums,
+                    asset_name,
+                    install_dir,
+                    expected_version,
+                    log,
+                    stage,
+                    result_file: options.result_file,
+                    expected_sha256: Some(expected_sha256),
+                })
+            }
+            "relaunch-watcher" => {
+                let options = tail_options(args)?;
+                options.apply();
+                watch(&WatcherPlan {
+                    status_file: options.status_file.ok_or_else(usage)?,
+                    result_file: options.result_file.ok_or_else(usage)?,
+                    app: options.app_path.ok_or_else(usage)?,
+                    log: options.log.ok_or_else(usage)?,
+                    version: options.expected_version.ok_or_else(usage)?,
+                    gui_pid: options.gui_pid,
+                })
+            }
             _ => Err(usage()),
         }
     }
@@ -627,12 +838,25 @@ mod windows {
     fn usage() -> String {
         "usage: tty7-updater verify <setup.exe> <checksums.txt> <asset-name> <version>\n\
          or: tty7-updater install <parent-pid> <setup.exe> <checksums.txt> <asset-name> \
-         <install-dir> <version> <log-path> <stage-dir>\n\
+         <install-dir> <version> <log-path> <stage-dir> \
+         [--config-dir <dir>] [--result-file <path>]\n\
          or: tty7-updater verify-portable <archive.zip> <checksums.txt> <asset-name> \
          <version> <stage-dir>\n\
          or: tty7-updater install-portable <parent-pid> <archive.zip> <checksums.txt> \
-         <asset-name> <install-dir> <version> <log-path> <stage-dir>\n\
-         or: tty7-updater cleanup <parent-pid> <stage-dir>"
+         <asset-name> <install-dir> <version> <log-path> <stage-dir> \
+         [--config-dir <dir>] [--result-file <path>]\n\
+         or: tty7-updater cleanup <parent-pid> <stage-dir>\n\
+         or: tty7-updater capabilities\n\
+         or: tty7-updater elevated-stage <gui-pid> <setup.exe> <asset-name> \
+         <install-dir> <version> <log-path> <stage-dir> \
+         --expected-sha256 <hex> --status-file <path> \
+         [--config-dir <dir>] [--result-file <path>]\n\
+         or: tty7-updater install-elevated <parent-pid> <setup.exe> <checksums.txt> \
+         <asset-name> <install-dir> <version> <log-path> <stage-dir> \
+         --expected-sha256 <hex> [--config-dir <dir>] [--result-file <path>]\n\
+         or: tty7-updater relaunch-watcher --status-file <path> --result-file <path> \
+         --app-path <tty7-app.exe> --log <path> --expected-version <version> \
+         [--gui-pid <pid>] [--config-dir <dir>]"
             .to_string()
     }
 
@@ -654,6 +878,106 @@ mod windows {
         }
     }
 
+    /// The named options an install verb takes after its positional arguments.
+    ///
+    /// Everything the caller needs this process to know travels this way —
+    /// never through the environment. An elevated (UAC) child does not
+    /// inherit the spawning GUI's environment, so a `TTY7_CONFIG_DIR` set
+    /// there would silently fall back to the *administrator's* config
+    /// directory under an over-the-shoulder elevation (#504).
+    #[derive(Default)]
+    struct TailOptions {
+        config_dir: Option<PathBuf>,
+        result_file: Option<PathBuf>,
+        /// The staged package's digest as the release server published it.
+        /// Crosses the elevation boundary on the command line because the
+        /// checksums file beside the package cannot anchor trust there: a
+        /// medium-integrity process can rewrite both together.
+        expected_sha256: Option<String>,
+        /// Where `elevated-stage` tells the watcher which pid names the
+        /// install chain.
+        status_file: Option<PathBuf>,
+        /// The `tty7-app.exe` the watcher relaunches.
+        app_path: Option<PathBuf>,
+        /// Log override for the verbs that take no positional log path (the
+        /// watcher).
+        log: Option<PathBuf>,
+        /// The version being installed, for the watcher's synthesized
+        /// outcomes.
+        expected_version: Option<String>,
+        /// The GUI the watcher must not relaunch over. See [`WatcherPlan`].
+        gui_pid: Option<u32>,
+    }
+
+    fn tail_options(mut args: impl Iterator<Item = OsString>) -> Result<TailOptions, String> {
+        let mut options = TailOptions::default();
+        while let Some(arg) = args.next() {
+            match arg.to_str() {
+                Some("--config-dir") => options.config_dir = Some(next_path(&mut args)?),
+                Some("--result-file") => options.result_file = Some(next_path(&mut args)?),
+                Some("--expected-sha256") => {
+                    options.expected_sha256 = Some(next_string(&mut args)?)
+                }
+                Some("--status-file") => options.status_file = Some(next_path(&mut args)?),
+                Some("--app-path") => options.app_path = Some(next_path(&mut args)?),
+                Some("--log") => options.log = Some(next_path(&mut args)?),
+                Some("--expected-version") => {
+                    options.expected_version = Some(next_string(&mut args)?)
+                }
+                Some("--gui-pid") => {
+                    options.gui_pid = Some(
+                        next_string(&mut args)?
+                            .parse::<u32>()
+                            .map_err(|_| "gui pid is not an unsigned integer".to_string())?,
+                    )
+                }
+                _ => return Err(usage()),
+            }
+        }
+        Ok(options)
+    }
+
+    impl TailOptions {
+        fn apply(&self) {
+            let Some(dir) = &self.config_dir else { return };
+            tty7_core::core::config::set_config_dir(dir.clone());
+            // The override above covers this process; the variable is
+            // re-exported so the helper children this process spawns — the
+            // payload's `--stop-daemon`, the relaunched app — keep answering
+            // for the same config directory. Safe here: argument parsing runs
+            // before any thread exists.
+            unsafe { std::env::set_var("TTY7_CONFIG_DIR", dir) };
+        }
+    }
+
+    /// The terminal outcome of the attempt, for the next GUI launch to merge
+    /// into the update state (#540). Best-effort: a result that cannot be
+    /// recorded goes to the log like every other updater detail. On paths that
+    /// relaunch the previous app this runs *before* the relaunch, so the GUI
+    /// finds the outcome already on disk when it starts.
+    fn report_outcome(
+        result_file: Option<&Path>,
+        log: &Path,
+        version: &str,
+        result: &Result<(), String>,
+    ) {
+        let Some(path) = result_file else { return };
+        let outcome = tty7_core::daemon::install::outcome::UpdateOutcome {
+            version: version.to_string(),
+            ok: result.is_ok(),
+            detail: result.as_ref().err().cloned(),
+        };
+        if let Err(error) = tty7_core::daemon::install::outcome::write_outcome(path, &outcome) {
+            log_line(
+                log,
+                &format!(
+                    "could not record the update outcome at {}: {error}",
+                    path.display()
+                ),
+            );
+        }
+    }
+
     struct InstallPlan {
         parent_pid: u32,
         installer: PathBuf,
@@ -663,6 +987,10 @@ mod windows {
         expected_version: String,
         log: PathBuf,
         stage: PathBuf,
+        result_file: Option<PathBuf>,
+        /// Set on the elevated path, where the digest — not the checksums
+        /// file it was copied with — is the trust anchor (#504).
+        expected_sha256: Option<String>,
     }
 
     struct PortableInstallPlan {
@@ -674,21 +1002,54 @@ mod windows {
         expected_version: String,
         log: PathBuf,
         stage: PathBuf,
+        result_file: Option<PathBuf>,
+    }
+
+    /// How an install ends. The distinction exists because an elevated
+    /// process must never spawn `tty7-app.exe`: the app it launched would
+    /// inherit the elevation — and under an over-the-shoulder prompt it
+    /// would even be the *administrator's* app, with the wrong account's
+    /// config. The elevated chain reports instead, and the medium-integrity
+    /// watcher relaunches.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Completion {
+        /// Today's path: this process relaunches the app itself.
+        RelaunchHere,
+        /// Elevated path: release the guard, write the outcome, leave the
+        /// relaunch to the watcher.
+        ReportToWatcher,
     }
 
     fn install(plan: InstallPlan) -> Result<(), String> {
+        install_inner(&plan, Completion::RelaunchHere)
+    }
+
+    fn install_elevated(plan: InstallPlan) -> Result<(), String> {
+        install_inner(&plan, Completion::ReportToWatcher)
+    }
+
+    fn install_inner(plan: &InstallPlan, completion: Completion) -> Result<(), String> {
         log_line(&plan.log, "waiting for the tty7 GUI to exit");
         if let Err(error) = wait_for_exit(plan.parent_pid) {
-            return recover_from_failed_update(&plan, error);
+            return recover_from_failed_update(plan, error, completion);
         }
         log_line(&plan.log, "re-verifying the staged Windows installer");
-        if let Err(error) = verify_update(
-            &plan.installer,
-            &plan.checksums,
-            &plan.asset_name,
-            &plan.expected_version,
-        ) {
-            return recover_from_failed_update(&plan, error);
+        let verification = match &plan.expected_sha256 {
+            Some(digest) => verify_update_digest(
+                &plan.installer,
+                &plan.asset_name,
+                &plan.expected_version,
+                digest,
+            ),
+            None => verify_update(
+                &plan.installer,
+                &plan.checksums,
+                &plan.asset_name,
+                &plan.expected_version,
+            ),
+        };
+        if let Err(error) = verification {
+            return recover_from_failed_update(plan, error, completion);
         }
 
         // Setup's own PrepareToInstall repeats this, but doing it here first
@@ -701,51 +1062,749 @@ mod windows {
         );
         // From here until the relaunch, a `tty7` CLI call or a manual launch
         // must not spawn a daemon that relocks the files Setup is replacing.
-        // launch_app releases the guard on every path out of this function.
+        // Every path out of this function releases the guard — `launch_app`
+        // on the relaunch-here paths, an explicit clear on the elevated ones.
         tty7_core::daemon::update_guard::hold();
         if let Err(error) = tty7_core::daemon::spawn::stop_for_update(&plan.install_dir) {
-            return recover_from_failed_update(&plan, error);
+            return recover_from_failed_update(plan, error, completion);
         }
 
         log_line(&plan.log, "running the tty7 Windows installer");
         let status = match run_installer(&plan.installer, &plan.log) {
             Ok(status) => status,
             Err(error) => {
-                return recover_from_failed_update(&plan, error);
+                return recover_from_failed_update(plan, error, completion);
             }
         };
         if !status.success() {
             let error = format!("the Windows installer exited with {status}");
-            return recover_from_failed_update(&plan, error);
+            return recover_from_failed_update(plan, error, completion);
         }
 
         if let Err(error) = verify_installed_payload(&plan.install_dir, &plan.expected_version) {
-            return recover_from_failed_update(&plan, error);
+            return recover_from_failed_update(plan, error, completion);
+        }
+        if completion == Completion::ReportToWatcher {
+            log_line(
+                &plan.log,
+                "the Windows update completed; the watcher relaunches tty7",
+            );
+            // The watcher hands the outcome to the next GUI launch, so it is
+            // written before the guard comes off and anything can start.
+            report_outcome(
+                plan.result_file.as_deref(),
+                &plan.log,
+                &plan.expected_version,
+                &Ok(()),
+            );
+            tty7_core::daemon::update_guard::clear();
+            queue_cleanup(&plan.install_dir, &plan.stage);
+            return Ok(());
         }
         log_line(&plan.log, "the Windows update completed; relaunching tty7");
         let result = launch_app(&plan.install_dir);
         if let Err(error) = &result {
             log_line(&plan.log, error);
         }
+        // A failed relaunch is the outcome here, and there is no running GUI
+        // to race it; a successful one launches the new build, whose absorb
+        // finds this already on disk.
+        report_outcome(
+            plan.result_file.as_deref(),
+            &plan.log,
+            &plan.expected_version,
+            &result,
+        );
         queue_cleanup(&plan.install_dir, &plan.stage);
         result
     }
 
     /// Records one terminal update failure and restores the same recovery
     /// behavior for every step that can fail after the GUI starts shutting down.
-    fn recover_from_failed_update(plan: &InstallPlan, error: String) -> Result<(), String> {
-        recover_without_replacement(&plan.log, &plan.install_dir, &plan.stage, error)
+    fn recover_from_failed_update(
+        plan: &InstallPlan,
+        error: String,
+        completion: Completion,
+    ) -> Result<(), String> {
+        if completion == Completion::ReportToWatcher {
+            // The relaunch belongs to the watcher on this path — an elevated
+            // process spawning the app is the one thing the chain must never
+            // do, failure recovery included. The guard still ends here: the
+            // installation is no longer being replaced.
+            log_line(&plan.log, &error);
+            let result = Err(error);
+            // Before the guard comes off: the watcher hands this to the next
+            // GUI launch, and the guard is what holds that launch back.
+            report_outcome(
+                plan.result_file.as_deref(),
+                &plan.log,
+                &plan.expected_version,
+                &result,
+            );
+            tty7_core::daemon::update_guard::clear();
+            queue_cleanup(&plan.install_dir, &plan.stage);
+            return result;
+        }
+        recover_without_replacement(
+            &plan.log,
+            &plan.install_dir,
+            &plan.stage,
+            plan.result_file.as_deref(),
+            &plan.expected_version,
+            error,
+        )
+    }
+
+    // ---------------------------------------------------------------------
+    // The elevated chain (#504): one UAC prompt, two elevated stages, and a
+    // watcher that never elevates. The GUI points the prompt at the
+    // *installed* updater — the one binary a medium-integrity process cannot
+    // have replaced — running `elevated-stage`; that stage re-stages the
+    // payload under an admin-only directory and runs `install-elevated` from
+    // it; the install stage reports through the outcome file instead of
+    // relaunching the app; and the `relaunch-watcher`, spawned by the GUI
+    // before the prompt as the original user, relaunches it.
+
+    /// What `capabilities` prints, one per line — the verbs the GUI requires
+    /// before it points a UAC prompt at the installed updater. The GUI keeps
+    /// its own copy of this list (see `updater_speaks_elevation` in
+    /// `core::update`); an updater that predates the verbs never prints them.
+    const ELEVATION_CAPABILITIES: [&str; 3] =
+        ["elevated-stage", "install-elevated", "relaunch-watcher"];
+
+    struct ElevatedStagePlan {
+        gui_pid: u32,
+        installer: PathBuf,
+        asset_name: String,
+        install_dir: PathBuf,
+        expected_version: String,
+        log: PathBuf,
+        stage: PathBuf,
+        expected_sha256: String,
+        status_file: PathBuf,
+        result_file: Option<PathBuf>,
+        config_dir: Option<PathBuf>,
+    }
+
+    fn elevated_stage(plan: ElevatedStagePlan) -> Result<(), String> {
+        let result = elevated_stage_inner(&plan);
+        if let Err(error) = &result
+            && plan
+                .result_file
+                .as_deref()
+                .is_some_and(|path| !path.exists())
+        {
+            // The install stage writes the outcome itself once it runs, so a
+            // failure before that — a digest mismatch, a staging error — has
+            // to be reported here, or the watcher waits out its status grace
+            // for a chain that never started.
+            report_outcome(
+                plan.result_file.as_deref(),
+                &plan.log,
+                &plan.expected_version,
+                &Err(error.clone()),
+            );
+        }
+        result
+    }
+
+    fn elevated_stage_inner(plan: &ElevatedStagePlan) -> Result<(), String> {
+        log_line(&plan.log, "preparing the elevated update staging");
+        // Every path this stage trusts is derived from its own image, never
+        // taken from the caller: the caller sits below the integrity
+        // boundary, and `<install-dir>` is what the helper pinning below
+        // compares against. Believing the argument would put both halves of
+        // that comparison in the hands of whoever wrote the command line.
+        let install_dir = installed_root()?;
+        if !same_directory(&install_dir, &plan.install_dir) {
+            log_line(
+                &plan.log,
+                &format!(
+                    "the caller named {} as the installation; using {}, which is where \
+                     this updater actually runs from",
+                    plan.install_dir.display(),
+                    install_dir.display()
+                ),
+            );
+        }
+        // The digest arrived on the command line — the one value a
+        // medium-integrity process cannot have forged, because the GUI read
+        // it from the release server over HTTPS. Everything this chain
+        // executes or installs is checked against it, before use and again
+        // after every copy.
+        verify_digest(
+            &plan.installer,
+            &plan.expected_sha256,
+            "staged Windows installer",
+        )?;
+        // The staged helper copy runs a process tree higher than it was
+        // written, so it is pinned to the installed image first — the one
+        // file a medium-integrity process cannot have replaced.
+        pin_helper_to_installed(&plan.stage.join("tty7-updater.exe"), &install_dir)?;
+
+        let staging = create_protected_staging()?;
+        let result = run_install_stage(plan, &install_dir, &staging);
+        // Whatever happened, the admin-only staging goes with this process. A
+        // removal failure strands it for the next elevated run to clear.
+        let _ = fs::remove_dir_all(&staging);
+        result
+    }
+
+    /// The installation this process was started from. UAC pointed the prompt
+    /// at `{app}\tty7-updater.exe`, so this process's own image names the
+    /// directory a medium-integrity process cannot write — the only trust
+    /// root the chain has before the payload is signed.
+    fn installed_root() -> Result<PathBuf, String> {
+        let exe = std::env::current_exe()
+            .map_err(|error| format!("locating the running updater: {error}"))?;
+        exe.parent()
+            .map(Path::to_path_buf)
+            .ok_or_else(|| format!("{} names no directory", exe.display()))
+    }
+
+    /// Only for telling the log that the caller's `<install-dir>` disagreed
+    /// with the image path. Deliberately not a gate: the derived directory is
+    /// used either way, and a cosmetic difference (case, a short path) must
+    /// not fail an update the user is watching.
+    fn same_directory(left: &Path, right: &Path) -> bool {
+        left.as_os_str()
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&right.as_os_str().to_string_lossy())
+    }
+
+    fn run_install_stage(
+        plan: &ElevatedStagePlan,
+        install_dir: &Path,
+        staging: &Path,
+    ) -> Result<(), String> {
+        let staged_installer = staging.join(&plan.asset_name);
+        let staged_checksums = staging.join("checksums.txt");
+        let staged_updater = staging.join("tty7-updater.exe");
+        fs::copy(&plan.installer, &staged_installer).map_err(|error| {
+            format!(
+                "copying {} into the protected staging: {error}",
+                plan.installer.display()
+            )
+        })?;
+        fs::copy(plan.stage.join("checksums.txt"), &staged_checksums).map_err(|error| {
+            format!("copying the checksums into the protected staging: {error}")
+        })?;
+        fs::copy(plan.stage.join("tty7-updater.exe"), &staged_updater)
+            .map_err(|error| format!("copying the updater into the protected staging: {error}"))?;
+        // Re-verified at their new home: the copy, not just the source, is
+        // what stage 2 executes and installs.
+        verify_digest(
+            &staged_installer,
+            &plan.expected_sha256,
+            "re-staged Windows installer",
+        )?;
+        pin_helper_to_installed(&staged_updater, install_dir)?;
+
+        // Name this process to the watcher as late as possible: it waits on
+        // the install stage below, so its one pid covers the whole chain.
+        if let Some(parent) = plan.status_file.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        fs::write(&plan.status_file, std::process::id().to_string())
+            .map_err(|error| format!("writing {}: {error}", plan.status_file.display()))?;
+
+        log_line(&plan.log, "running the elevated install stage");
+        let mut command = Command::new(&staged_updater);
+        command
+            .arg("install-elevated")
+            .arg(plan.gui_pid.to_string())
+            .arg(&staged_installer)
+            .arg(&staged_checksums)
+            .arg(&plan.asset_name)
+            .arg(install_dir)
+            .arg(&plan.expected_version)
+            .arg(&plan.log)
+            .arg(&plan.stage)
+            .arg("--expected-sha256")
+            .arg(&plan.expected_sha256);
+        if let Some(result_file) = &plan.result_file {
+            command.arg("--result-file").arg(result_file);
+        }
+        if let Some(config_dir) = &plan.config_dir {
+            command.arg("--config-dir").arg(config_dir);
+        }
+        let status = command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .and_then(|mut child| child.wait())
+            .map_err(|error| format!("running the elevated install stage: {error}"))?;
+        if !status.success() {
+            return Err(format!("the elevated install stage exited with {status}"));
+        }
+        Ok(())
+    }
+
+    /// `%ProgramData%\tty7\update-<pid>`, created with a DACL that lets no
+    /// standard user in. Between the digest check and the install the payload
+    /// sits in this directory, and one any medium-integrity process could
+    /// write would hand it a swap-in window across exactly that gap.
+    fn create_protected_staging() -> Result<PathBuf, String> {
+        let program_data = std::env::var_os("ProgramData")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(r"C:\ProgramData"));
+        let root = program_data.join("tty7");
+        claim_protected_root(&root)?;
+        let staging = root.join(format!("update-{}", std::process::id()));
+        create_dir_admin_only(&staging)?;
+        Ok(staging)
+    }
+
+    /// Claims `%ProgramData%\tty7` itself with the admin-only DACL, taking
+    /// down whatever holds the name first.
+    ///
+    /// `%ProgramData%` lets a standard user create directories, and the
+    /// creator owns what it creates. A root left to exist as somebody's
+    /// pre-created directory would hand its owner delete-child over the
+    /// "admin-only" staging inside it — enough to rename the verified
+    /// staging aside and drop an identically named one of their own into the
+    /// gap between the digest check and the execute, which is the exact
+    /// window the protected DACL exists to close. Creating the root here
+    /// makes it as unwritable as the staging: `CreateDirectoryW` applies the
+    /// descriptor only when it is the one creating the directory, so
+    /// succeeding *is* the proof.
+    ///
+    /// Nothing else lives under it — it holds staging directories and
+    /// nothing more — so removing it costs at most a dead chain's leftovers.
+    /// A holder that cannot be cleared (a live chain's locked image, an
+    /// attacker sitting on an open handle) fails the update closed.
+    fn claim_protected_root(root: &Path) -> Result<(), String> {
+        // A standard user racing the removal can only lose the name back to
+        // us; three tries is more than that race needs.
+        let mut failure = String::new();
+        for _ in 0..3 {
+            // `remove_path`, not `remove_dir_all`: the name may be held by a
+            // file or by a junction pointing somewhere it would be a
+            // catastrophe to recurse into, and a name that is not there at
+            // all is the ordinary first run.
+            remove_path(root)?;
+            match create_dir_admin_only(root) {
+                Ok(()) => return Ok(()),
+                Err(error) => failure = error,
+            }
+        }
+        Err(failure)
+    }
+
+    fn create_dir_admin_only(dir: &Path) -> Result<(), String> {
+        use windows_sys::Win32::Security::Authorization::{
+            ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+        };
+        use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
+        // Owner Administrators, group SYSTEM, and a protected DACL granting
+        // full control to exactly those two — not even read to Users.
+        const SDDL: &str = "O:BAG:SYD:P(A;OICI;FA;;;BA)(A;OICI;FA;;;SY)";
+        let mut descriptor: *mut c_void = null_mut();
+        if unsafe {
+            ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                wide_string(SDDL).as_ptr(),
+                SDDL_REVISION_1,
+                &mut descriptor,
+                null_mut(),
+            )
+        } == 0
+        {
+            return Err(format!(
+                "translating the staging DACL: OS error {}",
+                unsafe { GetLastError() }
+            ));
+        }
+        let attributes = SECURITY_ATTRIBUTES {
+            nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
+            lpSecurityDescriptor: descriptor,
+            bInheritHandle: 0,
+        };
+        let created = unsafe { CreateDirectoryW(wide_path(dir).as_ptr(), &attributes) };
+        let _ = unsafe { LocalFree(descriptor) };
+        if created == 0 {
+            return Err(format!("creating {}: OS error {}", dir.display(), unsafe {
+                GetLastError()
+            }));
+        }
+        Ok(())
+    }
+
+    /// The staged helper copy runs elevated, so it may only be the exact
+    /// bytes of the installed one: the installation directory is the trust
+    /// root a medium-integrity process cannot write, and the staged copy is
+    /// pinned to it before any use.
+    fn pin_helper_to_installed(staged: &Path, install_dir: &Path) -> Result<(), String> {
+        let installed = install_dir.join("tty7-updater.exe");
+        if file_digest(staged)? != file_digest(&installed)? {
+            return Err(format!(
+                "the staged updater at {} does not match the installed {} — \
+                 refusing to run it elevated",
+                staged.display(),
+                installed.display()
+            ));
+        }
+        Ok(())
+    }
+
+    fn file_digest(path: &Path) -> Result<String, String> {
+        let bytes =
+            fs::read(path).map_err(|error| format!("reading {}: {error}", path.display()))?;
+        Ok(tty7_core::daemon::install::checksums::hex(
+            &tty7_core::daemon::install::checksums::sha256(&bytes),
+        ))
+    }
+
+    fn verify_digest(file: &Path, expected_hex: &str, label: &str) -> Result<(), String> {
+        let actual = file_digest(file)?;
+        if !actual.eq_ignore_ascii_case(expected_hex) {
+            return Err(format!(
+                "the {label} failed sha256 verification: expected {expected_hex}, got {actual}"
+            ));
+        }
+        Ok(())
+    }
+
+    /// The elevated path's replacement for `verify_update`: same filename and
+    /// version checks, but the digest comes from the command line — the value
+    /// the GUI read from the release server — not from a checksums file that
+    /// crossed the medium-integrity staging directory beside the installer.
+    fn verify_update_digest(
+        installer: &Path,
+        asset_name: &str,
+        expected_version: &str,
+        expected_sha256: &str,
+    ) -> Result<(), String> {
+        if installer.file_name() != Some(OsStr::new(asset_name)) {
+            return Err(format!(
+                "the staged installer filename does not match the release asset {asset_name:?}"
+            ));
+        }
+        verify_digest(installer, expected_sha256, "staged Windows installer")?;
+        // Same reasoning as the manifest path: corruption or replacement
+        // while the helper waited is caught here, after the GUI exited.
+        verify_file_version(installer, expected_version, "staged Windows installer")
+    }
+
+    struct WatcherPlan {
+        status_file: PathBuf,
+        result_file: PathBuf,
+        app: PathBuf,
+        log: PathBuf,
+        version: String,
+        /// The GUI that raised the prompt, so a relaunch never lands beside a
+        /// window that is still there. Optional: a watcher told nothing about
+        /// it still brings the app back, which is the point of the timeouts
+        /// below — it just cannot tell "still up" from "already gone".
+        gui_pid: Option<u32>,
+    }
+
+    /// How often the watcher looks at the status and outcome files.
+    const WATCH_POLL: Duration = Duration::from_secs(1);
+    /// How long the watcher waits for the chain to first report in. Covers a
+    /// UAC prompt left open on the secure desktop — not a slow install, which
+    /// `WATCH_TIMEOUT` bounds once the chain has reported.
+    const WATCH_STATUS_GRACE: Duration = Duration::from_secs(15 * 60);
+    /// Bounds the whole install once the chain reported in. An install still
+    /// running past it (an antivirus rescanning every replaced file) has
+    /// stopped being an install and started being a machine with no
+    /// terminal on it: the watcher gives up waiting and brings the app back.
+    const WATCH_TIMEOUT: Duration = Duration::from_secs(60 * 60);
+    /// Between the chain's pid dying and giving up on its outcome: the write
+    /// is the last thing the chain does, so it lands within seconds.
+    const WATCH_RESULT_GRACE: Duration = Duration::from_secs(10);
+    /// How long a GUI that is still up when the watcher is ready to relaunch
+    /// is given to finish quitting. Long enough for a shutdown already under
+    /// way, short enough that a GUI which is *staying* (a declined prompt
+    /// whose `kill` did not land) is recognized as staying.
+    const GUI_EXIT_GRACE: Duration = Duration::from_secs(30);
+
+    /// What the watcher ended up believing about the install, and whether
+    /// that belief is already on disk. Anything it had to invent has to be
+    /// written before the app comes back, or a failure the chain never got
+    /// to record dies with the watcher — which is the hole #540 is about.
+    struct WatchOutcome {
+        outcome: UpdateOutcome,
+        recorded: bool,
+    }
+
+    impl WatchOutcome {
+        /// The chain's own word for it, already on disk.
+        fn recorded(outcome: UpdateOutcome) -> Self {
+            Self {
+                outcome,
+                recorded: true,
+            }
+        }
+
+        /// The watcher's word for it, and nobody else's.
+        fn synthesized(plan: &WatcherPlan, detail: &str) -> Self {
+            Self {
+                outcome: UpdateOutcome {
+                    version: plan.version.clone(),
+                    ok: false,
+                    detail: Some(detail.to_string()),
+                },
+                recorded: false,
+            }
+        }
+    }
+
+    fn watch(plan: &WatcherPlan) -> Result<(), String> {
+        // Opened first thing, while the GUI is provably still alive: it is
+        // blocked inside `ShellExecuteExW` waiting on the prompt, which is
+        // why the watcher is spawned before the prompt is raised. A handle
+        // taken then keeps naming that same process object no matter which
+        // process inherits the number later.
+        let gui = GuiProcess::open(plan.gui_pid);
+        let started = Instant::now();
+        let mut chain_seen = false;
+        let end = loop {
+            if let Some(end) = read_outcome_lossy(plan) {
+                break end;
+            }
+            match status_pid(&plan.status_file) {
+                Some(pid) if pid_alive(pid) => {
+                    chain_seen = true;
+                    if started.elapsed() > WATCH_TIMEOUT {
+                        break WatchOutcome::synthesized(
+                            plan,
+                            "the elevated update was still running an hour after it \
+                             started and never recorded a result",
+                        );
+                    }
+                }
+                // A dead pid — whether or not it was ever seen alive (a fast
+                // chain can complete between two polls) — or a status file
+                // that vanished after the chain was seen: the chain is over,
+                // and its outcome is the last thing it writes.
+                Some(_) => {
+                    break await_final_outcome(plan);
+                }
+                None if chain_seen => {
+                    break await_final_outcome(plan);
+                }
+                None => {
+                    if started.elapsed() > WATCH_STATUS_GRACE {
+                        break WatchOutcome::synthesized(
+                            plan,
+                            "the elevated updater never reported in; the install did \
+                             not run",
+                        );
+                    }
+                }
+            }
+            thread::sleep(WATCH_POLL);
+        };
+        finish_watch(plan, &gui, end)
+    }
+
+    /// The chain is gone; its outcome should already be on its way to disk.
+    fn await_final_outcome(plan: &WatcherPlan) -> WatchOutcome {
+        let deadline = Instant::now() + WATCH_RESULT_GRACE;
+        loop {
+            if let Some(end) = read_outcome_lossy(plan) {
+                return end;
+            }
+            if Instant::now() >= deadline {
+                return WatchOutcome::synthesized(
+                    plan,
+                    "the elevated updater exited without recording a result",
+                );
+            }
+            thread::sleep(WATCH_POLL);
+        }
+    }
+
+    /// The watcher's read of the outcome file: a parse failure is an outcome
+    /// — something wrote it — not a reason to keep waiting. Unreadable counts
+    /// as unrecorded, so the description below replaces the garbage.
+    fn read_outcome_lossy(plan: &WatcherPlan) -> Option<WatchOutcome> {
+        match tty7_core::daemon::install::outcome::read_outcome(&plan.result_file) {
+            Ok(outcome) => outcome.map(WatchOutcome::recorded),
+            Err(error) => {
+                let detail = format!(
+                    "the update result at {} could not be read: {error}",
+                    plan.result_file.display()
+                );
+                log_line(&plan.log, &detail);
+                Some(WatchOutcome::synthesized(plan, &detail))
+            }
+        }
+    }
+
+    fn finish_watch(plan: &WatcherPlan, gui: &GuiProcess, end: WatchOutcome) -> Result<(), String> {
+        let _ = fs::remove_file(&plan.status_file);
+        let WatchOutcome { outcome, recorded } = end;
+        // Nothing relaunches over a GUI that is still on screen. Two shapes
+        // reach here with one running: a declined prompt whose `kill` did not
+        // land — that GUI is staying, and owns its own window and its own
+        // record — and a chain that failed fast enough to beat the quitting
+        // GUI out the door, which is a GUI that will be gone in a moment and
+        // must be relaunched once it is. Waiting tells them apart without
+        // having to know which it was.
+        if gui.alive() && !gui.wait_for_exit(GUI_EXIT_GRACE) {
+            log_line(
+                &plan.log,
+                "the tty7 that raised the prompt is still running; leaving the \
+                 relaunch to it",
+            );
+            return Ok(());
+        }
+        if !recorded {
+            // The chain never got far enough to say this itself, and the
+            // launch below is what reads it: an unexplained update that
+            // simply asks again is exactly what the outcome file is for.
+            log_line(&plan.log, outcome.detail.as_deref().unwrap_or_default());
+            if let Err(error) =
+                tty7_core::daemon::install::outcome::write_outcome(&plan.result_file, &outcome)
+            {
+                log_line(
+                    &plan.log,
+                    &format!(
+                        "could not record the update outcome at {}: {error}",
+                        plan.result_file.display()
+                    ),
+                );
+            }
+        }
+        // Success or failure, the binary at the app path is the one to run:
+        // the new version after a completed install, the previous one after
+        // a recovery. Spawned from this never-elevated process, so the app
+        // comes back as the original user whatever the chain ran as.
+        let health = Command::new(&plan.app)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| format!("launching {}: {error}", plan.app.display()))
+            .and_then(|mut child| healthy_after_grace(&mut child));
+        if let Err(error) = health {
+            // "Installed but nothing came back" is a failure the user must
+            // see, so it replaces the outcome the chain recorded.
+            let detail = match &outcome.detail {
+                Some(previous) => format!("{previous}; and the relaunch failed: {error}"),
+                None => format!("the update installed but the relaunch failed: {error}"),
+            };
+            let _ = tty7_core::daemon::install::outcome::write_outcome(
+                &plan.result_file,
+                &UpdateOutcome {
+                    version: outcome.version.clone(),
+                    ok: false,
+                    detail: Some(detail.clone()),
+                },
+            );
+            log_line(&plan.log, &detail);
+            return Err(detail);
+        }
+        if outcome.ok {
+            Ok(())
+        } else {
+            Err(outcome.detail.unwrap_or_default())
+        }
+    }
+
+    /// The GUI that raised the UAC prompt, as seen by the watcher it spawned.
+    ///
+    /// Only ever consulted to answer "would relaunching now put a second
+    /// window beside the first", and the answer is asymmetric on purpose. A
+    /// living GUI always answers to its own pid, so "alive" is never wrong in
+    /// the direction that would double-launch. The one way to be wrong the
+    /// other way is a pid recycled into an unrelated process, which needs the
+    /// GUI to have died before this watcher even started — before the prompt
+    /// was answered — and costs only the relaunch this watcher would not have
+    /// performed before either.
+    struct GuiProcess {
+        pid: Option<u32>,
+        /// Held from watcher startup. A handle outlives the pid: the kernel
+        /// keeps the process object alive as long as this is open, so a
+        /// recycled number cannot answer for it.
+        handle: Option<OwnedHandle>,
+    }
+
+    impl GuiProcess {
+        fn open(pid: Option<u32>) -> Self {
+            let handle = pid.and_then(|pid| {
+                let handle = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, 0, pid) };
+                (!handle.is_null()).then(|| OwnedHandle(handle))
+            });
+            Self { pid, handle }
+        }
+
+        fn alive(&self) -> bool {
+            if let Some(handle) = &self.handle {
+                return unsafe { WaitForSingleObject(handle.0, 0) } == WAIT_TIMEOUT;
+            }
+            // The handle could not be taken. Falling back to the number keeps
+            // the conservative answer available; a caller that named no pid
+            // at all has no GUI to collide with.
+            self.pid.is_some_and(pid_alive)
+        }
+
+        /// Waits out a GUI that is quitting. `true` once it is gone, `false`
+        /// if it is still there when the budget runs out — which is the
+        /// answer "this one is staying".
+        fn wait_for_exit(&self, budget: Duration) -> bool {
+            let deadline = Instant::now() + budget;
+            loop {
+                if !self.alive() {
+                    return true;
+                }
+                if Instant::now() >= deadline {
+                    return false;
+                }
+                thread::sleep(WATCH_POLL);
+            }
+        }
+    }
+
+    /// Whether the pid names a live process, from an account that may not be
+    /// allowed to open it: under an over-the-shoulder elevation the chain
+    /// runs as the administrator, and `ERROR_ACCESS_DENIED` is exactly the
+    /// "alive" answer that boundary gives.
+    fn pid_alive(pid: u32) -> bool {
+        let handle = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, 0, pid) };
+        if handle.is_null() {
+            return unsafe { GetLastError() } == ERROR_ACCESS_DENIED;
+        }
+        let handle = OwnedHandle(handle);
+        // OpenProcess succeeds for an exited process while a handle remains;
+        // the zero wait tells running from merely remembered.
+        let wait = unsafe { WaitForSingleObject(handle.0, 0) };
+        wait == WAIT_TIMEOUT
+    }
+
+    fn status_pid(status_file: &Path) -> Option<u32> {
+        fs::read_to_string(status_file).ok()?.trim().parse().ok()
     }
 
     fn install_portable(plan: PortableInstallPlan) -> Result<(), String> {
+        install_portable_inner(&plan)
+    }
+
+    fn install_portable_inner(plan: &PortableInstallPlan) -> Result<(), String> {
         log_line(&plan.log, "waiting for the tty7 GUI to exit");
         if let Err(error) = wait_for_exit(plan.parent_pid) {
-            return recover_without_replacement(&plan.log, &plan.install_dir, &plan.stage, error);
+            return recover_without_replacement(
+                &plan.log,
+                &plan.install_dir,
+                &plan.stage,
+                plan.result_file.as_deref(),
+                &plan.expected_version,
+                error,
+            );
         }
 
         let payload = plan.stage.join(PORTABLE_PAYLOAD_DIR);
         if let Err(error) = remove_path(&payload) {
-            return recover_without_replacement(&plan.log, &plan.install_dir, &plan.stage, error);
+            return recover_without_replacement(
+                &plan.log,
+                &plan.install_dir,
+                &plan.stage,
+                plan.result_file.as_deref(),
+                &plan.expected_version,
+                error,
+            );
         }
         log_line(
             &plan.log,
@@ -758,7 +1817,14 @@ mod windows {
             &plan.expected_version,
             &payload,
         ) {
-            return recover_without_replacement(&plan.log, &plan.install_dir, &plan.stage, error);
+            return recover_without_replacement(
+                &plan.log,
+                &plan.install_dir,
+                &plan.stage,
+                plan.result_file.as_deref(),
+                &plan.expected_version,
+                error,
+            );
         }
 
         log_line(
@@ -770,10 +1836,25 @@ mod windows {
         // immediately, and a guard naming a dead writer holds nothing.
         tty7_core::daemon::update_guard::hold();
         if let Err(error) = stop_daemon_from_payload(&payload, &plan.install_dir) {
-            return recover_without_replacement(&plan.log, &plan.install_dir, &plan.stage, error);
+            return recover_without_replacement(
+                &plan.log,
+                &plan.install_dir,
+                &plan.stage,
+                plan.result_file.as_deref(),
+                &plan.expected_version,
+                error,
+            );
         }
 
         log_line(&plan.log, "replacing the tty7 Windows portable files");
+        let report = |result: &Result<(), String>| {
+            report_outcome(
+                plan.result_file.as_deref(),
+                &plan.log,
+                &plan.expected_version,
+                result,
+            );
+        };
         let result = replace_portable_and_relaunch(
             &plan.install_dir,
             &payload,
@@ -782,6 +1863,7 @@ mod windows {
                 launch_app(directory)
             },
             launch_app,
+            &report,
         );
         if let Err(error) = &result {
             log_line(&plan.log, error);
@@ -796,12 +1878,19 @@ mod windows {
         log: &Path,
         install_dir: &Path,
         stage: &Path,
+        result_file: Option<&Path>,
+        version: &str,
         error: String,
     ) -> Result<(), String> {
         log_line(log, &error);
+        let result = Err(error);
+        // The outcome lands before the old app does: the relaunched GUI
+        // merges it into the update state at startup, and a write afterward
+        // races that merge (#540).
+        report_outcome(result_file, log, version, &result);
         let _ = launch_app(install_dir);
         queue_cleanup(install_dir, stage);
-        Err(error)
+        result
     }
 
     fn verify_update(
@@ -1168,11 +2257,16 @@ mod windows {
         payload: &Path,
         activate_replacement: impl Fn(&Path) -> Result<(), String>,
         relaunch_previous: impl Fn(&Path) -> Result<(), String>,
+        report: &impl Fn(&Result<(), String>),
     ) -> Result<(), String> {
         // A unique backup inside the portable directory is on the same volume
         // as every managed path, so moving old files aside does not degrade to
         // a cross-volume copy. Keep it explicitly: if rollback itself fails,
         // dropping a TempDir must never delete the only remaining old binary.
+        //
+        // Every failure arm reports its outcome before relaunching the
+        // previous app: the relaunched GUI merges the outcome at startup, and
+        // a write afterward races that merge (#540).
         let backup = match tempfile::Builder::new()
             .prefix(".tty7-update-backup-")
             .tempdir_in(install_dir)
@@ -1186,6 +2280,7 @@ mod windows {
                 // The daemon has already stopped, but no installed files have
                 // moved yet. Restore GUI availability before returning the
                 // backup error so every post-shutdown failure recovers alike.
+                report(&Err(cause.clone()));
                 return Err(with_relaunch_failure(cause, relaunch_previous(install_dir)));
             }
         };
@@ -1196,6 +2291,7 @@ mod windows {
         if let Err(error) = fs::write(backup.join(PORTABLE_BACKUP_INCOMPLETE), b"") {
             let cause = format!("marking the update backup {}: {error}", backup.display());
             let _ = remove_path(&backup);
+            report(&Err(cause.clone()));
             return Err(with_relaunch_failure(cause, relaunch_previous(install_dir)));
         }
 
@@ -1211,6 +2307,7 @@ mod windows {
                     "moving {} into the update backup: {error}",
                     current.display()
                 );
+                report(&Err(cause.clone()));
                 let restore = restore_moved_roots(install_dir, &backup, &moved);
                 let relaunch = relaunch_previous(install_dir);
                 if restore.is_ok() {
@@ -1227,11 +2324,23 @@ mod windows {
             .filter(|(source, _)| source.exists())
             .try_for_each(|(source, destination)| copy_path(&source, &destination));
         if let Err(error) = copy_result {
-            return rollback_portable_failure(install_dir, &backup, error, &relaunch_previous);
+            return rollback_portable_failure(
+                install_dir,
+                &backup,
+                error,
+                &relaunch_previous,
+                report,
+            );
         }
 
         if let Err(error) = activate_replacement(install_dir) {
-            return rollback_portable_failure(install_dir, &backup, error, &relaunch_previous);
+            return rollback_portable_failure(
+                install_dir,
+                &backup,
+                error,
+                &relaunch_previous,
+                report,
+            );
         }
 
         // The replacement survived its launch grace period. Old managed files
@@ -1241,6 +2350,7 @@ mod windows {
         // it is finished business the next launch may discard on its own.
         let _ = fs::remove_file(backup.join(PORTABLE_BACKUP_INCOMPLETE));
         let _ = remove_path(&backup);
+        report(&Ok(()));
         Ok(())
     }
 
@@ -1249,7 +2359,9 @@ mod windows {
         backup: &Path,
         cause: String,
         relaunch_previous: &impl Fn(&Path) -> Result<(), String>,
+        report: &impl Fn(&Result<(), String>),
     ) -> Result<(), String> {
+        report(&Err(cause.clone()));
         let restore = restore_portable_backup(install_dir, backup);
         let relaunch = relaunch_previous(install_dir);
         if restore.is_ok() {
@@ -1415,6 +2527,12 @@ mod windows {
         }
     }
 
+    /// How long a parent that can only be *observed*, not waited on, is
+    /// given to finish quitting. See `wait_for_exit_across_accounts`: past
+    /// this, a recycled pid is indistinguishable from a process that never
+    /// exits, and failing closed beats installing over locked files.
+    const CROSS_ACCOUNT_EXIT_WAIT: Duration = Duration::from_secs(120);
+
     fn wait_for_exit(pid: u32) -> Result<(), String> {
         // Opening the handle before the GUI exits makes PID reuse irrelevant:
         // the kernel handle continues to name the original process object.
@@ -1423,6 +2541,9 @@ mod windows {
             let error = unsafe { GetLastError() };
             if error == ERROR_INVALID_PARAMETER {
                 return Ok(());
+            }
+            if error == ERROR_ACCESS_DENIED {
+                return wait_for_exit_across_accounts(pid);
             }
             return Err(format!("opening parent process {pid}: OS error {error}"));
         }
@@ -1433,6 +2554,34 @@ mod windows {
                 "waiting for parent process {pid}: OS error {}",
                 unsafe { GetLastError() }
             ));
+        }
+        Ok(())
+    }
+
+    /// The wait when the parent's process object refuses this account a
+    /// handle: under an over-the-shoulder elevation the chain runs as the
+    /// administrator, and the signed-in user's GUI answers its `OpenProcess`
+    /// with `ERROR_ACCESS_DENIED` — the same boundary `pid_alive` documents
+    /// from the watcher's side. The pid is still observable across it, so
+    /// the wait degrades to polling the pid until it stops answering.
+    ///
+    /// Bounded where the handle wait is not: without a handle, a pid
+    /// recycled after the GUI exited cannot be told from a GUI that never
+    /// exits, and the GUI was already quitting when this process was
+    /// spawned. Running out the budget fails the attempt closed — the
+    /// recovery path reports it and the watcher brings the app back —
+    /// rather than letting Setup fight a window that may still hold locks.
+    fn wait_for_exit_across_accounts(pid: u32) -> Result<(), String> {
+        let deadline = Instant::now() + CROSS_ACCOUNT_EXIT_WAIT;
+        while pid_alive(pid) {
+            if Instant::now() >= deadline {
+                return Err(format!(
+                    "parent process {pid} was still running {} seconds after the \
+                     install began",
+                    CROSS_ACCOUNT_EXIT_WAIT.as_secs()
+                ));
+            }
+            thread::sleep(WATCH_POLL);
         }
         Ok(())
     }
@@ -1738,6 +2887,126 @@ mod windows {
         }
 
         #[test]
+        fn tail_options_parse_named_arguments_in_any_order() {
+            let options = tail_options(
+                [
+                    OsString::from("--result-file"),
+                    OsString::from(r"C:\config\update-outcome.json"),
+                    OsString::from("--config-dir"),
+                    OsString::from(r"C:\config"),
+                ]
+                .into_iter(),
+            )
+            .unwrap();
+            assert_eq!(options.config_dir.as_deref(), Some(Path::new(r"C:\config")));
+            assert_eq!(
+                options.result_file.as_deref(),
+                Some(Path::new(r"C:\config\update-outcome.json"))
+            );
+
+            let none = tail_options(Vec::new().into_iter()).unwrap();
+            assert!(none.config_dir.is_none() && none.result_file.is_none());
+
+            // Anything unrecognized — including the positionals of an old or
+            // new caller whose plans do not match this build — stays an error.
+            assert!(tail_options([OsString::from("--surprise")].into_iter()).is_err());
+            assert!(tail_options([OsString::from("stray")].into_iter()).is_err());
+            // A flag missing its value is an error, not an empty path.
+            assert!(tail_options([OsString::from("--config-dir")].into_iter()).is_err());
+        }
+
+        /// The watcher relaunches the app on every way out, so the one thing
+        /// it must never get wrong is "is that GUI still on screen" — the
+        /// answer that keeps a declined prompt from being handed a second
+        /// window.
+        #[test]
+        fn a_live_gui_is_never_mistaken_for_a_finished_one() {
+            // Nothing named: nothing to collide with, so a relaunch goes ahead.
+            let unnamed = GuiProcess::open(None);
+            assert!(!unnamed.alive());
+            assert!(unnamed.wait_for_exit(Duration::from_millis(0)));
+
+            // This process is alive and staying: "still running", which is
+            // what suppresses the relaunch.
+            let own = GuiProcess::open(Some(std::process::id()));
+            assert!(own.alive());
+            assert!(!own.wait_for_exit(Duration::from_millis(0)));
+
+            // The case the relaunch actually depends on: a handle taken while
+            // the process was alive keeps naming it, and reports the exit
+            // afterwards however the pid is reused.
+            let mut child = Command::new("ping")
+                .args(["-n", "30", "127.0.0.1"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("ping ships with Windows");
+            let gui = GuiProcess::open(Some(child.id()));
+            assert!(gui.alive());
+            child.kill().unwrap();
+            let _ = child.wait();
+            assert!(gui.wait_for_exit(Duration::from_secs(5)));
+        }
+
+        /// The elevated stage pins the helper it is about to run against the
+        /// installed one, so the directory that comparison reads must come
+        /// from this process's own image. Taken from `<install-dir>` instead,
+        /// both sides of the comparison would belong to whoever wrote the
+        /// command line — and the caller sits below the integrity boundary.
+        #[test]
+        fn the_installed_root_is_the_running_image_not_an_argument() {
+            let exe = std::env::current_exe().unwrap();
+            assert_eq!(installed_root().unwrap(), exe.parent().unwrap());
+
+            // Only the log ever asks this, so case is all it has to forgive.
+            assert!(same_directory(
+                Path::new(r"C:\Program Files\tty7"),
+                Path::new(r"c:\program files\TTY7")
+            ));
+            assert!(!same_directory(
+                Path::new(r"C:\Program Files\tty7"),
+                Path::new(r"C:\Users\mallory\tty7")
+            ));
+        }
+
+        #[test]
+        fn report_outcome_records_the_terminal_result_for_the_next_gui() {
+            let root = tempfile::tempdir().unwrap();
+            let outcome_path = root.path().join("update-outcome.json");
+            let log = root.path().join("update.log");
+
+            report_outcome(None, &log, "27.0.0", &Ok(()));
+            assert!(
+                !outcome_path.exists(),
+                "a caller without --result-file gets today's behavior"
+            );
+
+            report_outcome(Some(&outcome_path), &log, "27.0.0", &Ok(()));
+            let outcome = tty7_core::daemon::install::outcome::read_outcome(&outcome_path).unwrap();
+            assert_eq!(
+                outcome,
+                Some(tty7_core::daemon::install::outcome::UpdateOutcome {
+                    version: "27.0.0".to_string(),
+                    ok: true,
+                    detail: None,
+                })
+            );
+
+            let failure: Result<(), String> = Err("the installer exited with code 5".to_string());
+            report_outcome(Some(&outcome_path), &log, "27.0.0", &failure);
+            let outcome = tty7_core::daemon::install::outcome::read_outcome(&outcome_path).unwrap();
+            assert_eq!(
+                outcome,
+                Some(tty7_core::daemon::install::outcome::UpdateOutcome {
+                    version: "27.0.0".to_string(),
+                    ok: false,
+                    detail: Some("the installer exited with code 5".to_string()),
+                })
+            );
+        }
+
+        #[test]
         fn archive_verification_rejects_tampered_installer_bytes() {
             let root = tempfile::tempdir().unwrap();
             let installer = root.path().join("tty7-1.0.0-windows-x86_64-setup.exe");
@@ -1908,6 +3177,7 @@ mod windows {
                     Ok(())
                 },
                 |_| panic!("the previous version must not relaunch after success"),
+                &|_| {},
             )
             .unwrap();
 
@@ -1953,6 +3223,7 @@ mod windows {
                     Ok(())
                 },
                 |_| panic!("the previous version must not relaunch after success"),
+                &|_| {},
             )
             .unwrap();
 
@@ -1978,15 +3249,21 @@ mod windows {
             fs::write(payload.path().join("tty7-app.exe"), b"new app").unwrap();
             fs::write(payload.path().join("tty7.exe"), b"new cli").unwrap();
             let relaunched = Cell::new(0usize);
+            let reported = Cell::new(false);
 
             let error = replace_portable_and_relaunch(
                 install.path(),
                 payload.path(),
                 |_| Err("the new app exited immediately".to_string()),
                 |_| {
+                    // The outcome must already be on disk when the previous
+                    // app comes back — the relaunched GUI reads it at startup
+                    // (#540).
+                    assert!(reported.get(), "the outcome is reported first");
                     relaunched.set(relaunched.get() + 1);
                     Ok(())
                 },
+                &|_| reported.set(true),
             )
             .unwrap_err();
 
@@ -2023,6 +3300,7 @@ mod windows {
                     relaunched.set(relaunched.get() + 1);
                     Ok(())
                 },
+                &|_| {},
             )
             .unwrap_err();
 

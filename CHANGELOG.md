@@ -630,6 +630,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A Windows install for all users now updates itself** — previously an
+  in-place update was refused there (replacing files under `C:\Program Files`
+  takes administrator rights, and a silent installer launched unelevated would
+  either install a second copy per-user or raise a bare UAC prompt from a
+  temporary directory). The update now runs as one announced UAC prompt that
+  covers both privileged stages, and the app itself never runs elevated: a
+  helper running as the signed-in user waits the install out and relaunches
+  tty7 with the user's own token. The update dialog says the prompt is coming
+  before the app quits, and "Install on Next Launch" is not offered — nobody
+  would be there to answer. Declining the prompt is not an error: the staged
+  package simply waits in Settings. Everything the elevated half needs crosses
+  as command-line arguments (an elevated child does not inherit the
+  environment), the package's checksum travels from the release server in the
+  GUI's memory rather than from a file the download could have rewritten, and
+  the privileged stages always run the *installed* updater — a medium-integrity
+  process cannot swap the binary that gets elevated. The staged copy lives in
+  an administrator-only `%ProgramData%` directory while the chain runs (#504).
+  Installations updated by an updater that predates the chain still fall back
+  to the manual download page, so the first release carrying this updates the
+  way it always did; the one after it updates itself.
+
 - **Every confirmation answers the way the platform taught you it would** — the
   action button is on the right and Cancel on the left, through one shared
   helper. Answer 0 is drawn rightmost and takes Return, so the old
@@ -1246,6 +1267,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing to say; both now use the pointing hand there, and hovering the grip
   no longer hands the cursor back to the arrow the moment the drag it
   advertised begins.
+
+- **A failed update install says so instead of asking again** — the GUI hands
+  the install to the `tty7-updater` helper and quits, so a failure inside the
+  helper used to reach only `update.log`: the old version relaunched with no
+  word about it, and because the prompt state had already been cleared, the
+  next check offered the very same version again — and again. The helper now
+  records the terminal outcome of every attempt (`update-outcome.json` next
+  to `update.json`) — before relaunching the previous app, so the relaunched
+  GUI finds it already on disk — and the GUI folds it into the update state at
+  startup: Settings shows the failure with the installer's own reason until
+  dismissed, and the version asks again only after the same three-day
+  reminder "Later" uses rather than on the next launch, so one failed install
+  neither nags nor quietly retires the version. The same channel carries the
+  success case, so a failure an earlier attempt recorded is retired by the
+  update that did land. As part of this the helper takes the config directory
+  as a `--config-dir` argument rather than through the environment, which an
+  elevated child process would not inherit (#540).
 
 ## [26.8.2] - 2026-08-09
 
