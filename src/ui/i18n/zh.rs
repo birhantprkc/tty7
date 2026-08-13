@@ -1331,7 +1331,6 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::CmdGitPull => "Git：拉取",
         L10nKey::CmdGitFetch => "Git：获取",
         L10nKey::CmdGitToggleGraph => "Git：显示 / 隐藏提交历史",
-        L10nKey::CmdClearScrollback => "清除 scrollback",
         L10nKey::CmdFindInTerminal => "在终端中查找…",
         L10nKey::CmdFindNext => "查找下一个",
         L10nKey::CmdFindPrevious => "查找上一个",
@@ -1552,7 +1551,6 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::CompletionListingRemote => "正在列出远程目录…",
         L10nKey::CompletionRemoteListingFailed => "远程目录列表失败——{error}",
         L10nKey::PanelMoreChangedFiles => "…还有 {count} 个变更文件——运行 git diff 查看。",
-        L10nKey::PanelMoreChangedFiles => "…还有 {count} 个变更文件——运行 `git diff` 查看。",
         L10nKey::ScmFilesChanged => "{count} 个文件改动",
         L10nKey::ScmStagedFileCount => "已暂存 {count} 个文件",
         L10nKey::AppMenuAbout => "关于 tty7",
@@ -1704,17 +1702,15 @@ pub fn translate_variant_zh(key: L10nKey, branch: &'static str) -> Option<&'stat
         }
         (L10nKey::PanelMoreChangedFiles, "zero") => "…还有 0 个变更文件——运行 git diff 查看。",
         (L10nKey::PanelMoreChangedFiles, "one") => "…还有 1 个变更文件——运行 git diff 查看。",
+        (L10nKey::PanelMoreChangedFiles, "other") => {
+            "…还有 {count} 个变更文件——运行 git diff 查看。"
+        }
         (L10nKey::ScmFilesChanged, "zero") => "没有文件改动",
         (L10nKey::ScmFilesChanged, "one") => "1 个文件改动",
         (L10nKey::ScmFilesChanged, "other") => "{count} 个文件改动",
         (L10nKey::ScmStagedFileCount, "zero") => "没有暂存的更改",
         (L10nKey::ScmStagedFileCount, "one") => "已暂存 1 个文件",
         (L10nKey::ScmStagedFileCount, "other") => "已暂存 {count} 个文件",
-        (L10nKey::PanelMoreChangedFiles, "zero") => "…还有 0 个变更文件——运行 `git diff` 查看。",
-        (L10nKey::PanelMoreChangedFiles, "one") => "…还有 1 个变更文件——运行 `git diff` 查看。",
-        (L10nKey::PanelMoreChangedFiles, "other") => {
-            "…还有 {count} 个变更文件——运行 git diff 查看。"
-        }
         (L10nKey::DiffChangedFiles, "zero") => "0 个变更文件",
         (L10nKey::DiffChangedFiles, "one") => "1 个变更文件",
         (L10nKey::DiffChangedFiles, "other") => "{count} 个变更文件",
