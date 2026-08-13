@@ -944,7 +944,14 @@ impl Tty7App {
                     .on_click(cx.listener(|this, _, _window, cx| this.toggle_left_panel(cx))),
                 ),
             );
+        // The tile inside asks for `w_full`, and a percentage is only a width
+        // while every box above it has one. This row had none of its own — it
+        // borrowed the column's by cross-axis stretch — so on any pass that
+        // sizes the column from its content the chain resolves against nothing
+        // and the tile falls back to hugging the workspace name. Declaring the
+        // width here anchors it to the rail, which is a fixed `w(px(width))`.
         let workspace_head = h_flex()
+            .w_full()
             .flex_shrink_0()
             .px(px(crate::ui::app::CONTENT_INSET - 7.))
             .pt(px(4.))
