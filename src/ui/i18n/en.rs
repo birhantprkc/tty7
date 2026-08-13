@@ -353,7 +353,10 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         }
         L10nKey::SettingsArguments => "Arguments",
         L10nKey::SettingsArgumentsDesc => {
-            "Space-separated launch flags (e.g. -l for a login shell)."
+            "Launch flags, split like a command line — quote anything containing spaces (e.g. -l, or -c \"echo hi\")."
+        }
+        L10nKey::SettingsArgumentsInvalid => {
+            "The quotes do not balance — this value was not saved."
         }
         L10nKey::SettingsStartIn => "Start in",
         L10nKey::SettingsStartInDesc => {

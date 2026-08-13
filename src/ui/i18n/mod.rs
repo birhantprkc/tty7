@@ -339,6 +339,7 @@ l10n_keys! {
     SettingsProgramDesc,
     SettingsArguments,
     SettingsArgumentsDesc,
+    SettingsArgumentsInvalid,
     SettingsStartIn,
     SettingsStartInDesc,
     SettingsCustomPath,

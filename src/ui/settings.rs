@@ -4788,10 +4788,22 @@ impl Tty7App {
             .max_w_full()
             .child(Input::new(&program_input).small().suffix(program_picker))
             .into_any_element();
-        let args_control = div()
+        // Args become argv verbatim, so a quote that never closes is a value
+        // that cannot be saved at all — `commit_shell` refuses it, and this
+        // line is the explanation (#551). The proxy row's pattern, including
+        // its caveat: the input commits on Enter/blur and this parent renders
+        // on that commit, so a half-typed quote is never marked wrong
+        // mid-keystroke.
+        let args_value = args_input.read(cx).value();
+        let args_error = crate::ui::app::split_shell_args(&args_value)
+            .is_err()
+            .then(|| field_error(t(L10nKey::SettingsArgumentsInvalid), cx));
+        let args_control = v_flex()
+            .gap_1()
             .w(px(260.))
             .max_w_full()
             .child(Input::new(&args_input).small())
+            .when_some(args_error, |this, line| this.child(line))
             .into_any_element();
 
         use crate::core::config::WdStrategy;
