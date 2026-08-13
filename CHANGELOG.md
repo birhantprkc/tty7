@@ -235,6 +235,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already staged; the toast now carries the plan's actual reason ("Write a
   commit message first"), the same words the panel's own button shows on its
   tooltip. (#546)
+- **Terminal pop-up menus no longer leak clicks into the grid behind them** —
+  the completion menu and the reverse-search menu (both the floating panel and
+  the input-bar row) inserted no hitbox of their own, so a press on one fell
+  straight through to the terminal: it cleared whatever was selected and
+  dragged out a new selection, merely moving over a row underlined the text
+  beneath it, and a Ctrl+click opened the link the menu was covering. All
+  three occlude now, so a press on a menu stops at the menu. (#541)
+- **A file link that fails to open says so** — clicking a file path whose
+  opener is missing, or whose `link_file_command` template expands to nothing,
+  used to fail into a logfile line and nothing else; the click now raises the
+  same kind of toast a failed image upload does, naming the path and the
+  error. (#542)
 
 ## [26.8.3] - 2026-08-12
 
