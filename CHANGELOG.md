@@ -87,6 +87,120 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reach them. The retry is now dropped only for a tab the user really did make
   while the pull was out, and a window waiting on a rebuild adds to its machine
   without pruning it until the pull lands (#579).
+- **Installing an update on Windows shows a progress window.** The installer
+  ran `/VERYSILENT`, so from the app quitting to the new build coming up —
+  tens of seconds, longer under an antivirus scan — the screen held nothing
+  at all, and "clicked update, the app vanished" read as a crash. The
+  installer now runs `/SILENT`: still unattended, but Inno's own progress
+  window stays on screen for the gap (#600).
+- **Orphan panes are visible in the GUI, and closable from it.** A shell
+  left running after its workspace went away — what an interrupted `tty7
+  run` leaves behind — showed up nowhere in the GUI; only the CLI's `tty7
+  pane ls --all` could see it, and only `pane close --orphans` could stop
+  it. The workspace switcher's local machine group now lists those
+  background panes with their owner and working directory, each with a
+  Close button (#596).
+- **A launch that restores one of several windows says what it left behind.**
+  Quitting with several windows open and starting again restored only the
+  most recent one; the rest were marked detached — panes alive, nothing on
+  screen, the only trace a log line. The restored window now shows a
+  notification naming how many workspaces are still running in the
+  background and where to reopen them (#597).
+- **`tty7 pane close %99` fails when no pane 99 exists.** The orphan path
+  hangs the pane up directly, and that kill is fire-and-forget — the daemon
+  never says whether it knew the pane — so a typo'd id printed
+  `{"closed":[99]}` and exited 0, telling a reaper script the leak it was
+  chasing was gone. Close now checks the id against the running-pane
+  registry first and reports the miss under `failed` with exit 1 (#588).
+- **cd Here and Insert Path quote for the shell the pane runs.** Both used
+  to wrap a path with spaces in POSIX single quotes whatever the pane's
+  shell was, and cmd.exe — where a single quote is an ordinary character —
+  then split the path at its first space. The quote style now follows the
+  pane's shell: double quotes for cmd.exe, single quotes for PowerShell and
+  every POSIX shell (#593).
+- **Remote path completion says what it's doing.** Tab-completing a path
+  on a remote workspace used to show nothing for the whole network
+  round-trip — a slow link read as a broken Tab key — and a listing that
+  failed ended in exactly the silence an empty directory ends in. A pill
+  over the pane's corner now says the listing is running, and a failed
+  listing reports its error there instead of vanishing (#585).
+- **Seven hard-coded English strings moved into the language tables.** The
+  shell-integration notice, the pane titles a disconnected or exited pane
+  wears, the loopback forward's failure, the tray tooltip that lists running
+  agents, the cursor-shape choices, the command palette's empty-result hint
+  and the updater's install hint all used to render in English whatever the
+  UI language was; they now follow it, and the palette's hint no longer
+  suggests connecting over SSH in menus that have nothing to do with hosts
+  (#602).
+- **A half-typed tab rename survives other tabs closing and the strip
+  reordering.** The rename box tracked its tab by index, so any unrelated
+  tab event forced it closed to keep the commit from landing on the wrong
+  tab — and even then, a reorder mid-rename left a window where the name
+  went to the tab that had taken the index over. The box now tracks its tab
+  by tree id: only closing the renaming tab itself ends the rename, and the
+  commit lands on the tab the box was opened on wherever it has moved
+  (#598).
+- **A zoomed pane stays zoomed when you leave its tab and come back.** Zoom
+  was a window-level value that activating any tab cleared, so looking at
+  another tab and returning restored the split layout — while a zoom is a
+  tab's temporary view state, like its focused pane. It now rides with the
+  tab; the clears that genuinely reshape the layout (drag, split, close)
+  still stand, and a zoom whose pane exited while the tab was away does not
+  come back (#599).
+- **Opening and closing the search bar no longer erases the grid
+  selection.** The selection that seeds the query is the thing being
+  searched for, yet opening the bar ran the same unconditional clear as
+  *changing* the query, and closing cleared it again — select text, press
+  Ctrl+F then Esc, and the selection was gone. The seeded selection is now
+  kept through the open, and closing keeps whatever selection the grid
+  holds; only an actual query change retires it, the discipline the output
+  rescan path already stated (#584).
+- **Search highlights follow the text when the pane is resized.** A match
+  point is an absolute (line, column) against the width it was scanned at,
+  so narrowing a pane reflowed the text out from under every highlight until
+  new output happened to trigger a rescan — and a quiet local pane has none
+  coming. A column change now rescans immediately, with the output path's
+  discipline (the selection and scroll position are left alone); a
+  rows-only change reflows nothing and stays cheap (#586).
+- **A mistyped "Start in" path is refused at save instead of silently
+  rerouting every new pane.** The custom path used to be stored unchecked,
+  and the daemon's picker then skipped it — not a directory — and started
+  each new shell in its own fallback directory, so "new shells don't start
+  in my project" read as a tty7 bug rather than a typo. Settings now marks a
+  non-existent directory in red and does not save it, and a hand-edited
+  `config.json` holding one gets a `log::warn!` naming the path at the
+  moment the fallback engages (#601).
+- **`tty7 doctor` exits 1 when the server is unreachable.** Doctor is the
+  verb people run when something is not working, so an unreachable server is
+  *the* finding — not a row to exit 0 over while `tty7 doctor || alert`
+  never fires. The full table and JSON still go out, and stderr carries the
+  headline under `-q` (#592).
+- **The `owner` field of `pane ls --all` is documented the same way in both
+  references** — the bundled skill reference still claimed the CLI stamps a
+  literal `"tty7-cli"` owner, the behaviour that was removed because an owner
+  names the workspace allowed to attach. Both now describe the workspace id,
+  or its absence while a pane is unfiled (#591).
+- **A failed `tty7 wait` now says so on stderr even under `-q`.** Timeout and
+  "pane exited first" are structured exits, so they bypassed the anyhow path
+  that prints under quiet mode and left the exit code as the only evidence —
+  against the documented "errors still go to stderr". Both now print a
+  one-line headline to stderr, the discipline `pane close` already set (#590).
+- **A timed-out `tty7 wait` now answers in the same JSON shape as a finished
+  one** — `matched`, `stale` and the agent session fields, plus
+  `"timed_out": true` — instead of a bare object missing the fields a
+  consumer's error branch was written against. The schema, including
+  `timed_out`, is now documented (#589).
+- **Cancelling the amend confirmation no longer switches amend off.** The
+  toggle was cleared when Commit was pressed — before the "rewrite the last
+  commit?" prompt — so answering Cancel returned to a panel whose amend mode
+  had silently been dropped, and the next Commit created the brand-new commit
+  the user had just declined to risk. The toggle now switches off only when
+  the commit actually runs (#595).
+- **The SCM panel's "discard all" confirmation no longer overstates what it
+  does.** The prompt asked to "discard every change in this repository" while
+  the operation has always left staged changes alone — it sweeps only unstaged
+  edits and untracked files. The prompt now says exactly that, in all three
+  languages (#594).
 - **A local daemon that dies and comes back no longer leaves a window of dead
   panes looking live** — from the client's side a killed daemon is
   indistinguishable from one whose shells all exited at once, so the window

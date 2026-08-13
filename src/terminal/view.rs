@@ -255,6 +255,11 @@ pub struct TerminalView {
     pending_history: Option<PendingHistory>,
     completion: Option<CompletionSession>,
     remote_completion_inflight: bool,
+    /// Why the last remote listing produced nothing, when it failed: "no
+    /// candidates" and "the listing itself failed" used to end in the same
+    /// silence, and only one of them is normal (#585). Dismissed by the next
+    /// keystroke, like the integration notice.
+    remote_completion_notice: Option<String>,
     completion_generation: u64,
     editor_handoff: Option<u64>,
     editor_handoff_interrupt_seq: Option<u64>,
@@ -402,15 +407,8 @@ fn known_pty_shim(fg: &str) -> Option<&'static str> {
 
 fn integration_notice_message(wrapper: Option<&str>) -> String {
     match wrapper {
-        Some(w) => format!(
-            "tty7 shell integration is blocked in this pane — \u{201c}{w}\u{201d} is intercepting \
-             shell reports, so inline completion and the Ctrl+R menu are unavailable. \
-             The shell's own history search still works."
-        ),
-        None => "tty7 shell integration hasn't engaged in this pane, so inline completion and \
-                 the Ctrl+R menu are unavailable. A PTY wrapper (figterm-style) or an \
-                 unsupported shell setup can cause this."
-            .to_string(),
+        Some(w) => t_fmt(L10nKey::IntegrationNoticeBlocked, &[("wrapper", w)]),
+        None => t(L10nKey::IntegrationNoticeNotEngaged).to_string(),
     }
 }
 
@@ -1253,6 +1251,7 @@ impl TerminalView {
             editor_handoff: None,
             editor_handoff_interrupt_seq: None,
             remote_completion_inflight: false,
+            remote_completion_notice: None,
             reverse_search: None,
             integration_notice: None,
             integration_notice_shown: false,
@@ -1273,7 +1272,17 @@ impl TerminalView {
         cell_width: Pixels,
         line_height: Pixels,
         scale: f32,
+        cx: &mut Context<Self>,
     ) {
+        // A column change reflows every wrapped line, and a match point is an
+        // absolute (line, column) against the width it was scanned at — so
+        // the highlights keep washing the *old* positions until something
+        // rescans. Output rescans them (`Wakeup` → refresh), but a quiet
+        // local pane has no output coming: without this the drift outlasts
+        // the resize indefinitely (#586). Rescan with the output path's
+        // discipline — it keeps the selection and never scrolls. Rows alone
+        // reflow nothing, so a height-only drag stays cheap.
+        let cols_changed = cols != self.terminal.size().cols;
         if (cols, rows) != (self.terminal.size().cols, self.terminal.size().rows) {
             self.last_hover_cell = None;
             self.hovered_link = None;
@@ -1298,6 +1307,9 @@ impl TerminalView {
             (cell_width.as_f32() * scale).round().max(1.) as u16,
             (line_height.as_f32() * scale).round().max(1.) as u16,
         );
+        if cols_changed && self.search.is_some() {
+            self.refresh_matches_after_output(cx);
+        }
     }
 
     pub fn cwd(&self) -> Option<std::path::PathBuf> {
@@ -1570,9 +1582,18 @@ impl TerminalView {
             AlacEvent::PtyWrite(text) => self.terminal.write(text.into_bytes()),
             AlacEvent::ChildExit(_) | AlacEvent::Exit => {
                 self.terminal.exited = true;
-                self.title = match self.workspace().is_some() && !self.terminal.child_exited() {
-                    true => format!("{} — disconnected", self.default_title),
-                    false => format!("{} — process exited", self.default_title),
+                // The pane keeps answering to its own name (an SSH pane's
+                // host, #438) — only the state suffix is localized (#602).
+                self.title = if self.workspace().is_some() && !self.terminal.child_exited() {
+                    t_fmt(
+                        L10nKey::PaneTitleDisconnected,
+                        &[("title", &self.default_title)],
+                    )
+                } else {
+                    t_fmt(
+                        L10nKey::PaneTitleProcessExited,
+                        &[("title", &self.default_title)],
+                    )
                 };
                 if self.terminal.child_exited() {
                     cx.emit(ChildExited);
@@ -1638,6 +1659,11 @@ impl TerminalView {
             return;
         }
         if self.integration_notice.take().is_some() {
+            cx.notify();
+        }
+        // The remote-listing failure pill goes away on the next keystroke
+        // too — by then the user has seen it (#585).
+        if self.remote_completion_notice.take().is_some() {
             cx.notify();
         }
         let reshaped = if cfg!(target_os = "macos") {
@@ -4051,22 +4077,40 @@ impl TerminalView {
             return true;
         }
         self.remote_completion_inflight = true;
+        // The listing takes a network round-trip the menu says nothing about
+        // — paint the "listing…" pill now, or a slow link reads as a broken
+        // Tab key (#585).
+        cx.notify();
         let route = crate::ui::sftp::SftpRoute::new(self.pane_id, self.workspace.clone());
         let dir = req.dir.clone();
         let line = line.to_string();
         log::debug!(target: "tty7::completion", "listing {dir} over the remote's own connection");
         cx.spawn(async move |this, cx| {
             let listed = cx.background_spawn(async move { route.list(&dir) }).await;
-            let entries = listed.unwrap_or_else(|e| {
-                log::warn!(
-                    target: "tty7::completion",
-                    "remote listing failed, treating it as no candidates: {e}"
-                );
-                Vec::new()
-            });
+            let (entries, failed) = match listed {
+                Ok(entries) => (entries, None),
+                Err(e) => {
+                    // A failure is not an empty directory: the two used to
+                    // end in the same silence (#585).
+                    log::warn!(
+                        target: "tty7::completion",
+                        "remote listing failed, treating it as no candidates: {e}"
+                    );
+                    (Vec::new(), Some(e.to_string()))
+                }
+            };
             let _ = this.update(cx, |view, cx| {
                 view.remote_completion_inflight = false;
+                if let Some(error) = failed {
+                    view.remote_completion_notice = Some(t_fmt(
+                        L10nKey::CompletionRemoteListingFailed,
+                        &[("error", &error)],
+                    ));
+                }
                 view.remote_path_results(req, &line, cursor, entries, forward, cx);
+                // An empty listing closes the menu without one — the pill
+                // still has to come down.
+                cx.notify();
             });
         })
         .detach();
@@ -4884,7 +4928,13 @@ impl TerminalView {
             Ok(forward) => LoopbackOpen::Forwarded(loopback.forwarded_url(forward.local_port)),
             Err(e) => {
                 log::warn!("failed to forward loopback URL {url}: {e}");
-                LoopbackOpen::ForwardFailed(format!("Couldn't forward :{} — {e}", loopback.port))
+                LoopbackOpen::ForwardFailed(t_fmt(
+                    L10nKey::LoopbackForwardFailed,
+                    &[
+                        ("port", &loopback.port.to_string()),
+                        ("error", &e.to_string()),
+                    ],
+                ))
             }
         }
     }
@@ -5665,23 +5715,45 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) -> Option<impl IntoElement + use<>> {
         let text = self.integration_notice.clone()?;
+        Some(Self::notice_pill(text, cx))
+    }
+
+    /// The one-row pill that floats over the pane's bottom-right corner.
+    fn notice_pill(text: String, cx: &App) -> impl IntoElement + use<> {
         let theme = cx.theme();
-        Some(
-            div()
-                .absolute()
-                .bottom(px(GRID_PAD_Y))
-                .right(px(GRID_PAD_X))
-                .max_w(px(560.))
-                .px_3()
-                .py_1()
-                .bg(theme.popover)
-                .border_1()
-                .border_color(theme.border)
-                .rounded(px(6.))
-                .text_size(px(12.))
-                .text_color(theme.muted_foreground)
-                .child(text),
-        )
+        div()
+            .absolute()
+            .bottom(px(GRID_PAD_Y))
+            .right(px(GRID_PAD_X))
+            .max_w(px(560.))
+            .px_3()
+            .py_1()
+            .bg(theme.popover)
+            .border_1()
+            .border_color(theme.border)
+            .rounded(px(6.))
+            .text_size(px(12.))
+            .text_color(theme.muted_foreground)
+            .child(text)
+    }
+
+    /// What the remote-completion pill should say right now, if anything:
+    /// the listing's failure once it has one, "listing…" while it runs, and
+    /// nothing at all the rest of the time (#585).
+    fn remote_completion_notice_text(&self) -> Option<String> {
+        if let Some(notice) = &self.remote_completion_notice {
+            return Some(notice.clone());
+        }
+        self.remote_completion_inflight
+            .then(|| t(L10nKey::CompletionListingRemote).to_string())
+    }
+
+    fn render_remote_completion_notice(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> Option<impl IntoElement + use<>> {
+        let text = self.remote_completion_notice_text()?;
+        Some(Self::notice_pill(text, cx))
     }
 
     fn kind_color(&self, kind: TokenKind, cx: &App) -> gpui::Hsla {
@@ -5780,6 +5852,7 @@ impl Render for TerminalView {
             .then(|| self.render_reverse_search_menu(cx))
             .flatten();
         let integration_notice = self.render_integration_notice(cx);
+        let remote_completion_notice = self.render_remote_completion_notice(cx);
 
         let menu_focus = self.focus_handle.clone();
         let has_selection = self.any_selection();
@@ -5864,6 +5937,7 @@ impl Render for TerminalView {
             .children(completion_menu)
             .children(reverse_search_menu)
             .children(integration_notice)
+            .children(remote_completion_notice)
             .context_menu(move |menu, window, cx| {
                 // Suppressing the popup means handing back an item-less menu:
                 // gpui-component's `ContextMenu` element skips rendering the
@@ -8575,16 +8649,16 @@ mod gpui_tests {
         let (window, _daemon) = harness(cx);
         window
             .update(cx, |view, _, cx| {
-                view.set_grid_size(80, 24, px(8.), px(17.), 1.);
+                view.set_grid_size(80, 24, px(8.), px(17.), 1., cx);
                 view.hover_link_at(0, 23, true, cx);
                 assert_eq!(view.last_hover_cell, Some((0, 23)));
                 view.hovered_link = Some(HoveredLink {
                     start: Point::new(Line(23), Column(0)),
                     end: Point::new(Line(23), Column(3)),
                 });
-                view.set_grid_size(80, 24, px(8.), px(17.), 1.);
+                view.set_grid_size(80, 24, px(8.), px(17.), 1., cx);
                 assert_eq!(view.last_hover_cell, Some((0, 23)));
-                view.set_grid_size(80, 8, px(8.), px(17.), 1.);
+                view.set_grid_size(80, 8, px(8.), px(17.), 1., cx);
                 assert!(view.last_hover_cell.is_none(), "the cell is stale");
                 assert!(view.hovered_link.is_none(), "so is the link it resolved");
             })
@@ -10612,6 +10686,29 @@ mod gpui_tests {
     }
 
     #[gpui::test]
+    fn a_remote_listing_says_so_while_it_runs_and_when_it_fails(cx: &mut TestAppContext) {
+        let (window, _daemon) = harness(cx);
+        window
+            .update(cx, |view, _, _| {
+                assert!(view.remote_completion_notice_text().is_none());
+                view.remote_completion_inflight = true;
+                assert_eq!(
+                    view.remote_completion_notice_text().as_deref(),
+                    Some("listing remote…"),
+                    "a slow link must not read as a broken Tab key (#585)"
+                );
+                view.remote_completion_inflight = false;
+                view.remote_completion_notice = Some("remote listing failed — boom".to_string());
+                assert_eq!(
+                    view.remote_completion_notice_text().as_deref(),
+                    Some("remote listing failed — boom"),
+                    "a failed listing is not the same silence as an empty one"
+                );
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
     fn a_tab_on_a_detached_remote_pane_never_asks_for_a_listing(cx: &mut TestAppContext) {
         use std::io::Write as _;
         crate::core::config::pin_test_config_dir();
@@ -10953,6 +11050,147 @@ mod gpui_tests {
                 view.close_search(window, cx);
                 assert_eq!(view.search_last_query, "(");
                 assert!(view.search.is_none());
+            })
+            .unwrap();
+    }
+
+    /// A match point is an absolute (line, column) against the width it was
+    /// scanned at, so a column change reflows the text out from under every
+    /// highlight. Output rescans them, but a quiet pane has none coming —
+    /// the resize itself has to rescan (#586).
+    #[gpui::test]
+    fn a_column_resize_rescans_the_open_searchs_highlights(cx: &mut TestAppContext) {
+        // Rooted: the open bar's input reaches for `Root` when a frame draws
+        // (see `rooted_harness`).
+        let (window, view, mut daemon) = rooted_harness(cx);
+
+        // 76 columns of text: one row at 80 wide, wrapped onto two at 40.
+        let mut line = vec![b'a'; 70];
+        line.extend_from_slice(b"needle\r\n");
+        DaemonMsg::Output(line).encode(&mut daemon).unwrap();
+
+        for _ in 0..200 {
+            let ready = cx.update(|cx| {
+                let v = view.read(cx);
+                let term = v.terminal.term.lock();
+                let grid = term.grid();
+                (0..grid.screen_lines() as i32)
+                    .any(|l| (0..grid.columns()).any(|c| grid[Line(l)][Column(c)].c == 'n'))
+            });
+            if ready {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+
+        window
+            .update(cx, |_, window, cx| {
+                view.update(cx, |v, cx| {
+                    v.open_search(window, cx);
+                    let input = v.search.as_ref().unwrap().input.clone();
+                    input.update(cx, |s, cx| s.set_value("needle", window, cx));
+                    v.recompute_matches(cx);
+                    let before = *v.search.as_ref().unwrap().matches[0].start();
+                    assert_eq!(
+                        (before.line.0, before.column.0),
+                        (0, 70),
+                        "one unwrapped row at 80 columns"
+                    );
+
+                    // No output, no debounce: the resize alone has to move the
+                    // highlight to where the reflow put the text. Where exactly
+                    // the wrapped half lands (next row, or the first half pushed
+                    // into scrollback) is the grid's business — what matters is
+                    // that the highlight sits on the needle, not its old row.
+                    v.set_grid_size(40, 24, px(8.), px(17.), 1., cx);
+                    let after = *v.search.as_ref().unwrap().matches[0].start();
+                    assert_ne!(
+                        (after.line.0, after.column.0),
+                        (0, 70),
+                        "column 70 does not even exist at 40 wide — a stale point"
+                    );
+                    let term = v.terminal.term.lock();
+                    let cell = term.grid()[after.line][after.column].c;
+                    drop(term);
+                    assert_eq!(cell, 'n', "the highlight follows the reflowed text");
+
+                    // A rows-only change reflows nothing; the scan must not move.
+                    v.set_grid_size(40, 12, px(8.), px(17.), 1., cx);
+                    let still = *v.search.as_ref().unwrap().matches[0].start();
+                    assert_eq!(
+                        (still.line.0, still.column.0),
+                        (after.line.0, after.column.0)
+                    );
+                });
+            })
+            .unwrap();
+    }
+
+    /// The selection that seeds the search query is the thing being searched
+    /// for — opening the bar must not erase it, and closing the bar must not
+    /// either (#584). Only *changing* the query retires it.
+    #[gpui::test]
+    fn the_search_bar_opens_and_closes_around_a_grid_selection(cx: &mut TestAppContext) {
+        let (window, view, mut daemon) = rooted_harness(cx);
+
+        DaemonMsg::Output(b"some needle in the haystack\r\n".to_vec())
+            .encode(&mut daemon)
+            .unwrap();
+        for _ in 0..200 {
+            let ready = cx.update(|cx| {
+                let v = view.read(cx);
+                let term = v.terminal.term.lock();
+                let grid = term.grid();
+                (0..grid.screen_lines() as i32)
+                    .any(|l| (0..grid.columns()).any(|c| grid[Line(l)][Column(c)].c == 'n'))
+            });
+            if ready {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+
+        window
+            .update(cx, |_, window, cx| {
+                view.update(cx, |v, cx| {
+                    // Select "needle" (row 0, columns 5..=10 — the end side
+                    // includes its cell) — the seed the bar picks up.
+                    let mut sel = Selection::new(
+                        SelectionType::Simple,
+                        Point::new(Line(0), Column(5)),
+                        Side::Left,
+                    );
+                    sel.update(Point::new(Line(0), Column(10)), Side::Right);
+                    v.terminal.term.lock().selection = Some(sel);
+
+                    v.open_search(window, cx);
+                    assert_eq!(
+                        v.search.as_ref().unwrap().input.read(cx).value(),
+                        "needle",
+                        "the bar opens on the selection as its query"
+                    );
+                    assert!(
+                        v.terminal.term.lock().selection.is_some(),
+                        "opening the bar must not eat the selection that seeded it"
+                    );
+
+                    v.close_search(window, cx);
+                    assert!(
+                        v.terminal.term.lock().selection.is_some(),
+                        "closing the bar must not eat it either"
+                    );
+
+                    // But a query the user *changed* retires the old selection:
+                    // it no longer names what the search is about.
+                    v.open_search(window, cx);
+                    let input = v.search.as_ref().unwrap().input.clone();
+                    input.update(cx, |s, cx| s.set_value("haystack", window, cx));
+                    v.recompute_matches(cx);
+                    assert!(
+                        v.terminal.term.lock().selection.is_none(),
+                        "a changed query retires the stale selection"
+                    );
+                });
             })
             .unwrap();
     }

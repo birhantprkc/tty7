@@ -270,6 +270,11 @@ pub struct Tab {
     pub pane: Pane,
     pub name: Option<String>,
     last_focused: Option<gpui::EntityId>,
+    /// The pane zoomed in this tab, stashed here by `activate` while another
+    /// tab is on screen — zoom is a tab's view state, not the window's, so
+    /// looking at another tab and coming back must not lose it (#599). `None`
+    /// while the tab is active: then the zoom lives in `Tty7App::maximized`.
+    pub(crate) zoomed: Option<Entity<TerminalView>>,
     pub(crate) diff_overlay: Option<crate::ui::diff_overlay::DiffOverlayState>,
     pub(crate) code: Option<Box<crate::ui::code_editor::TabCode>>,
     pub(crate) sidebar_group: std::cell::RefCell<Option<std::path::PathBuf>>,
@@ -293,6 +298,7 @@ impl Tab {
             pane,
             name: None,
             last_focused: None,
+            zoomed: None,
             diff_overlay: None,
             code: None,
             overlay_top: OverlayTop::default(),
@@ -307,6 +313,7 @@ impl Tab {
             pane,
             name: tree.name.clone(),
             last_focused: None,
+            zoomed: None,
             diff_overlay: None,
             code: None,
             overlay_top: OverlayTop::default(),
@@ -450,7 +457,11 @@ impl Tab {
 }
 
 pub(crate) struct Renaming {
-    pub(crate) index: usize,
+    /// The tab being renamed, by tree id rather than index: an index drifts
+    /// the moment any other tab closes or the strip reorders, which used to
+    /// force every unrelated tab event to throw the half-typed name away —
+    /// and left a window where the commit landed on the wrong tab (#598).
+    pub(crate) tab: tty7_core::core::machine::TabId,
     pub(crate) input: Entity<InputState>,
     _subs: Vec<Subscription>,
 }
@@ -1373,6 +1384,7 @@ impl Tty7App {
                 pane,
                 name: st.name,
                 last_focused: None,
+                zoomed: None,
                 diff_overlay: None,
                 code: None,
                 overlay_top: OverlayTop::default(),
@@ -3396,8 +3408,23 @@ impl Tty7App {
     pub(crate) fn activate(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if index < self.tabs.len() && index != self.active {
             self.remember_active_pane(window, cx);
-            self.maximized = None;
+            // Zoom rides with its tab (#599): stash the outgoing tab's zoom
+            // and bring the incoming tab's back. The clears elsewhere (drag,
+            // split, close) still stand — those genuinely reshape what was
+            // zoomed; merely looking at another tab does not.
+            if let Some(outgoing) = self.tabs.get_mut(self.active) {
+                outgoing.zoomed = self.maximized.take();
+            }
             self.active = index;
+            self.maximized = self.tabs[index].zoomed.take().filter(|leaf| {
+                // The zoomed pane may have exited while its tab was away —
+                // a stale entity must not come back as the zoom.
+                self.tabs[index]
+                    .pane
+                    .leaves()
+                    .iter()
+                    .any(|l| l.entity_id() == leaf.entity_id())
+            });
             self.maybe_refresh_diff_overlay(cx);
             self.sidebar_scroll.scroll_to_item(index);
             if self.code_panel_visible() {
@@ -3454,7 +3481,6 @@ impl Tty7App {
             return;
         }
         self.maximized = None;
-        self.renaming = None;
         let worktree_cwd = self.tab_host_cwd(index, window, cx);
         let snapshot = tab_to_session(&self.tabs[index], cx);
         self.closed.push(snapshot);
@@ -3465,6 +3491,15 @@ impl Tty7App {
             kill_pane_off_thread(leaf.read(cx).pane_route(), leaf.read(cx).pane_id, cx);
         }
         self.tabs.remove(index);
+        // Only losing the renaming tab itself ends the rename — closing an
+        // unrelated tab must not throw the half-typed name away (#598).
+        if self
+            .renaming
+            .as_ref()
+            .is_some_and(|r| !self.tabs.iter().any(|t| t.tree_id.get() == r.tab))
+        {
+            self.renaming = None;
+        }
         if self.tabs.is_empty() {
             self.active = 0;
         } else if self.active >= self.tabs.len() {
@@ -3918,7 +3953,8 @@ impl Tty7App {
         if order.len() != self.tabs.len() || order.iter().enumerate().all(|(i, &o)| i == o) {
             return;
         }
-        self.renaming = None;
+        // The rename box rides out a reorder: it tracks its tab by tree id,
+        // so the drift that once forced it closed here is gone (#598).
         let was_active = self.active;
         let mut slots: Vec<Option<Tab>> = std::mem::take(&mut self.tabs)
             .into_iter()
@@ -3962,7 +3998,7 @@ impl Tty7App {
             },
         )];
         self.renaming = Some(Renaming {
-            index,
+            tab: self.tabs[index].tree_id.get(),
             input,
             _subs: subs,
         });
@@ -4005,7 +4041,11 @@ impl Tty7App {
             return;
         };
         let value = renaming.input.read(cx).value().trim().to_string();
-        if let Some(tab) = self.tabs.get_mut(renaming.index) {
+        if let Some(tab) = self
+            .tabs
+            .iter_mut()
+            .find(|t| t.tree_id.get() == renaming.tab)
+        {
             tab.name = if value.is_empty() { None } else { Some(value) };
         }
         self.save_session(cx);
@@ -5252,6 +5292,16 @@ impl Tty7App {
         else {
             return;
         };
+        // A typo here is not a directory, and the daemon then silently falls
+        // back to its own cwd for every new pane — "new shells don't start in
+        // my project" reads as a tty7 bug rather than a typo (#601). Refuse
+        // to save, the proxy row's pattern (#551): the field keeps the text,
+        // the settings row explains in red, and the last good value stays in
+        // config.json.
+        if !wd_path_saveable(&path) {
+            cx.notify();
+            return;
+        }
         let cfg = cx.global_mut::<Config>();
         if cfg.working_directory.path == path {
             return;
@@ -6920,6 +6970,7 @@ fn tabs_from_session(
             pane,
             name: st.name.clone(),
             last_focused: None,
+            zoomed: None,
             diff_overlay: None,
             code: None,
             overlay_top: OverlayTop::default(),
@@ -7321,6 +7372,17 @@ fn quote_shell_arg(arg: &str) -> String {
     quoted
 }
 
+/// The one rule the "Start in" custom path lives by (#601): empty means unset
+/// and saves; anything else must name a directory that exists, because the
+/// daemon's picker skips a path that is not one and every new pane then
+/// silently starts somewhere else. Settings refuses to save such a value and
+/// marks it red — both decide through this, so the red line and the not-saved
+/// config always agree. Local on purpose: this is the local daemon's config.
+pub(crate) fn wd_path_saveable(path: &str) -> bool {
+    let path = path.trim();
+    path.is_empty() || std::path::Path::new(path).is_dir()
+}
+
 pub(crate) fn parse_ssh_option_words(input: &str) -> Result<Vec<String>, ()> {
     let mut words = Vec::new();
     let mut current = String::new();
@@ -7707,8 +7769,28 @@ mod tests {
     use super::{
         CloseReason, TabAgentSession, clear_window_override_values, close_prompt, join_shell_args,
         leaf_shares_the_window_daemon, mru_order, pane_free_for, parse_ssh_connect_input,
-        parse_ssh_option_words, split_shell_args,
+        parse_ssh_option_words, split_shell_args, wd_path_saveable,
     };
+
+    #[test]
+    fn a_start_in_path_saves_only_when_it_names_a_real_directory() {
+        // Empty is "unset", not a broken path.
+        assert!(wd_path_saveable(""));
+        assert!(wd_path_saveable("   "));
+        let real = std::env::temp_dir();
+        let real = real.to_str().expect("temp dir is utf-8 here");
+        assert!(wd_path_saveable(real), "{real} exists");
+        assert!(
+            wd_path_saveable(&format!("  {real}  ")),
+            "the commit trims, so the check trims too"
+        );
+        assert!(!wd_path_saveable("/definitely/not/a/real/dir"));
+        // A file is not a directory the shell can start in.
+        let file = std::env::temp_dir().join("tty7-wd-saveable-probe");
+        std::fs::write(&file, b"x").expect("write probe file");
+        assert!(!wd_path_saveable(file.to_str().expect("utf-8")));
+        let _ = std::fs::remove_file(&file);
+    }
 
     #[test]
     fn the_close_question_names_what_it_is_about_to_end() {
@@ -8634,6 +8716,98 @@ mod rename_gpui_tests {
                 state.selected_range(),
                 end..end,
                 "typing has to continue {value:?}, not land in front of it"
+            );
+        });
+    }
+    #[gpui::test]
+    fn a_rename_rides_out_other_tabs_closing_and_the_strip_reordering(cx: &mut TestAppContext) {
+        let (app, mut vcx, _streams) = harness_with_tabs(cx, 3);
+
+        app.update_in(&mut vcx, |app, window, cx| {
+            app.start_rename(2, window, cx);
+            let target = app.tabs[2].tree_id.get();
+            let input = app.renaming.as_ref().expect("the box is up").input.clone();
+            input.update(cx, |s, cx| s.set_value("mine", window, cx));
+
+            // An unrelated close used to throw the half-typed name away
+            // (#598).
+            app.close_tab_inner(0, true, window, cx);
+            assert!(
+                app.renaming.is_some(),
+                "closing another tab keeps the rename box"
+            );
+
+            // So did a drag-reorder — and the index the commit once landed
+            // on had by then drifted onto a different tab.
+            let order: Vec<usize> = (0..app.tabs.len()).rev().collect();
+            app.apply_tab_order(&order, cx);
+            assert!(app.renaming.is_some(), "a reorder keeps the rename box");
+
+            app.commit_rename(window, cx);
+            let named: Vec<_> = app
+                .tabs
+                .iter()
+                .filter(|t| t.name.as_deref() == Some("mine"))
+                .collect();
+            assert_eq!(named.len(), 1, "the name landed on exactly one tab");
+            assert_eq!(
+                named[0].tree_id.get(),
+                target,
+                "and that tab is the one the box was opened on"
+            );
+        });
+
+        // Closing the renaming tab itself still ends the rename.
+        app.update_in(&mut vcx, |app, window, cx| {
+            app.start_rename(0, window, cx);
+            assert!(app.renaming.is_some());
+            app.close_tab_inner(0, true, window, cx);
+            assert!(app.renaming.is_none(), "losing its own tab closes the box");
+        });
+    }
+}
+
+// Zoom is a tab's view state: it rides with the tab across a switch, while a
+// layout change (drag, split, close) still clears it.
+#[cfg(all(test, unix))]
+mod zoom_gpui_tests {
+    use gpui::TestAppContext;
+
+    use crate::ui::app::test_window::harness_with_tabs;
+
+    #[gpui::test]
+    fn a_tabs_zoom_survives_a_round_trip_to_another_tab(cx: &mut TestAppContext) {
+        let (app, mut vcx, _streams) = harness_with_tabs(cx, 2);
+
+        app.update_in(&mut vcx, |app, window, cx| {
+            let leaf = app.tabs[0]
+                .pane
+                .first_leaf()
+                .and_then(|slot| slot.terminal().cloned())
+                .expect("tab 0 has a pane");
+            app.maximized = Some(leaf.clone());
+
+            app.activate(1, window, cx);
+            assert!(app.maximized.is_none(), "tab 1 never zoomed anything");
+
+            app.activate(0, window, cx);
+            assert_eq!(
+                app.maximized.as_ref().map(|l| l.entity_id()),
+                Some(leaf.entity_id()),
+                "tab 0's zoom is still where it was left (#599)"
+            );
+
+            // A zoom stashed for a pane that is no longer in the tab does not
+            // come back — it exited (or was closed) while the tab was away.
+            app.maximized = Some(leaf.clone());
+            app.activate(1, window, cx);
+            app.tabs[0].zoomed = Some(leaf);
+            app.tabs[0].pane =
+                crate::ui::pane::Pane::leaf(app.tabs[1].pane.first_leaf().expect("a donor leaf"));
+            app.activate(0, window, cx);
+            assert!(
+                app.maximized.is_none(),
+                "a stashed zoom whose pane is gone stays gone"
             );
         });
     }

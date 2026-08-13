@@ -852,6 +852,11 @@ fn pane_close(
     // the state the caller was trying to fix.
     let mut closed = Vec::new();
     let mut failures = Vec::new();
+    // The running-pane registry, read lazily on the first direct kill: the
+    // direct path is fire-and-forget (the daemon never says whether it knew
+    // the pane), so the registry is the only way `%99` can fail instead of
+    // reporting `{"closed":[99]}` for a pane that never existed (#588).
+    let mut running: Option<Vec<u64>> = None;
     for pane in panes {
         let outcome = match resolve::workspace_of_pane(&machine, pane) {
             Ok(ws) => {
@@ -864,7 +869,24 @@ fn pane_close(
             // No workspace holds it, so PaneClose has nothing to route through.
             // Hang it up directly instead of refusing — this is exactly the
             // orphan `pane ls --all` points the user at.
-            Err(_) => backend.kill_pane(pane),
+            Err(_) => {
+                if running.is_none() {
+                    running = Some(
+                        backend
+                            .list_panes()?
+                            .iter()
+                            .map(|info| info.pane_id)
+                            .collect(),
+                    );
+                }
+                if running.as_ref().is_some_and(|ids| ids.contains(&pane)) {
+                    // A pane that exits between the listing and the kill is
+                    // gone either way, which is what closing it wanted.
+                    backend.kill_pane(pane)
+                } else {
+                    Err(anyhow::anyhow!("no such pane"))
+                }
+            }
         };
         match outcome {
             Ok(()) => closed.push(pane),
@@ -1081,6 +1103,12 @@ fn wait(args: WaitArgs, ctx: &Context, backend: &mut dyn Backend) -> Result<Outc
                 // Structured even here: a script has to tell "my peer died"
                 // apart from "the daemon is unreachable", and an anyhow error
                 // would leave --json with nothing to read.
+                //
+                // The headline goes to stderr all the same, so `-q` still
+                // reports it — the discipline `pane close` set: a failure is
+                // not "output on success", and an exit code alone says which
+                // wait died nowhere (#590).
+                eprintln!("tty7: pane %{pane} exited before reaching the awaited state");
                 return Ok(Outcome::Exit(
                     1,
                     Report {
@@ -1127,11 +1155,30 @@ fn wait(args: WaitArgs, ctx: &Context, backend: &mut dyn Backend) -> Result<Outc
                      --changed",
                 );
             }
+            // The headline goes to stderr all the same, so `-q` still
+            // reports it — see the sibling exit above for why (#590).
+            eprintln!("tty7: pane %{pane}: still {} — timed out", current.name());
             return Ok(Outcome::Exit(
                 124,
                 Report {
                     human,
-                    json: json!({ "pane": pane, "status": current.name(), "timed_out": true }),
+                    // The same shape as a finished wait, plus the flag that
+                    // says the deadline ended it: a consumer written against
+                    // the success path must not find its fields missing on
+                    // exactly the branch it wrote error handling for (#589).
+                    json: {
+                        let session = entry.as_ref().map(|e| &e.state);
+                        json!({
+                            "pane": pane,
+                            "status": current.name(),
+                            "matched": false,
+                            "stale": !changed,
+                            "timed_out": true,
+                            "activity": session.map(|s| s.activity),
+                            "message": session.and_then(|s| s.message.clone()),
+                            "session_id": session.and_then(|s| s.session_id.clone()),
+                        })
+                    },
                 },
             ));
         }
@@ -1394,9 +1441,9 @@ fn doctor(ctx: &Context, backend: &mut dyn Backend) -> Result<Outcome> {
             "\nnot inside a tty7 shell — address commands need an explicit %pane/@tab/workspace\n",
         );
     }
-    report(
+    let report = Report {
         human,
-        json!({
+        json: json!({
             "context": {
                 "config_dir": ctx.config_dir.is_some(),
                 "workspace": ctx.ws.is_some(),
@@ -1405,7 +1452,16 @@ fn doctor(ctx: &Context, backend: &mut dyn Backend) -> Result<Outcome> {
             "server": server,
             "hooks": hooks_json(&hooks),
         }),
-    )
+    };
+    if report.json["server"]["reachable"] == false {
+        // doctor is the verb people run when something is not working, so an
+        // unreachable server is *the* finding — not a row to exit 0 over:
+        // `tty7 doctor || alert` has to fire (#592). The table and JSON go
+        // out all the same, and stderr carries the headline under `-q`.
+        eprintln!("tty7: doctor: the server is unreachable");
+        return Ok(Outcome::Exit(1, report));
+    }
+    Ok(Outcome::Report(report))
 }
 
 /// Where every installable status hook stands on this machine.
@@ -1594,6 +1650,9 @@ mod tests {
     #[test]
     fn closing_an_orphan_falls_back_to_hanging_the_pane_up() {
         let mut backend = mock();
+        // The registry must know %77: a direct kill is fire-and-forget, so
+        // close verifies existence against it first (#588).
+        backend.registry = vec![pane_info(77, Some("tty7-cli"))];
         run_cli(
             &["tty7", "pane", "close", "%77"],
             &Context::default(),
@@ -1626,6 +1685,38 @@ mod tests {
                 .any(|c| matches!(c, ControlRequest::PaneClose { pane: 1, .. })),
             "{:?}",
             backend.control_calls
+        );
+    }
+
+    #[test]
+    fn closing_a_pane_that_never_existed_is_a_failure_not_a_ghost_success() {
+        // %99 is in no workspace and in no registry — exactly the typo a
+        // reaper script makes. Closing it used to print {"closed":[99]} and
+        // exit 0, telling the script the leak it was chasing was gone (#588).
+        let mut backend = mock();
+        backend.registry = vec![pane_info(77, Some("tty7-cli"))];
+        let out = execute(
+            cli(&["tty7", "pane", "close", "%99"]),
+            &Context::default(),
+            &mut backend,
+        )
+        .expect("a ghost close is an exit code, not an error");
+        let Outcome::Exit(1, r) = out else {
+            panic!("closing a pane that does not exist has to fail: {out:?}");
+        };
+        assert_eq!(r.json["closed"], serde_json::json!([]));
+        assert!(
+            r.json["failed"]
+                .as_array()
+                .expect("the failures are a list")
+                .iter()
+                .any(|f| f.as_str().is_some_and(|f| f.contains("%99"))),
+            "{}",
+            r.json
+        );
+        assert!(
+            backend.killed.is_empty(),
+            "no kill may be sent for a pane the registry does not hold"
         );
     }
 
@@ -3110,10 +3201,15 @@ mod tests {
             &mut backend,
         )
         .expect("a timeout is an exit code, not an error");
-        assert!(
-            matches!(out, Outcome::Exit(124, _)),
-            "a pane that was free all along has not run anything"
-        );
+        let Outcome::Exit(124, r) = out else {
+            panic!("a pane that was free all along has not run anything");
+        };
+        // A timeout answers in the success path's own shape, plus the flag —
+        // a consumer's error branch must not meet missing fields (#589).
+        assert_eq!(r.json["timed_out"], true);
+        assert_eq!(r.json["matched"], false);
+        assert_eq!(r.json["stale"], true, "nothing ran while we watched");
+        assert!(r.json.get("session_id").is_some());
 
         // Free → busy → free is the real shape, and it must wake.
         let mut backend = mock();
@@ -3519,5 +3615,29 @@ mod tests {
             &mut doctor_backend(),
         ));
         assert!(out.contains("unknown"), "{out}");
+    }
+
+    /// An unreachable server is *the* finding doctor exists for, so the verb
+    /// exits non-zero over it — `tty7 doctor || alert` has to fire — while
+    /// still printing the full report (#592).
+    #[test]
+    fn doctor_exits_nonzero_when_the_server_is_unreachable() {
+        let mut backend = mock();
+        backend.unreachable = true;
+        let out = run_cli(&["tty7", "doctor"], &Context::default(), &mut backend);
+        let Outcome::Exit(1, r) = out else {
+            panic!("an unreachable server is an exit 1, not a plain report: {out:?}");
+        };
+        assert_eq!(r.json["server"]["reachable"], serde_json::json!(false));
+        // The rest of the report still goes out — the context rows are the
+        // other half of what doctor is for.
+        assert!(r.human.contains("TTY7_CONFIG_DIR"), "{}", r.human);
+        assert!(r.human.contains("unreachable"), "{}", r.human);
+        // No Status/Routes round-trips happen once hello has failed.
+        assert!(
+            backend.control_calls.is_empty(),
+            "{:?}",
+            backend.control_calls
+        );
     }
 }

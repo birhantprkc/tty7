@@ -392,6 +392,9 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsWdInherit => "継承",
         L10nKey::SettingsWdHome => "ホーム",
         L10nKey::SettingsWdCustom => "カスタム",
+        L10nKey::SettingsWdPathInvalid => {
+            "このディレクトリは存在しないため、この値は保存されませんでした"
+        }
         L10nKey::SettingsShellFooter => {
             "継承元のないシェルに適用されます。ウィンドウの最初のタブなどです。新しいタブと分割はアクティブなペインのディレクトリを引き継ぎ、開いているシェルは動き続けます"
         }
@@ -1139,7 +1142,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         }
         L10nKey::ScmOpenChanges => "変更を開く",
         L10nKey::ScmDiscardAllConfirm => {
-            "このリポジトリのすべての変更を破棄しますか？元に戻せません。"
+            "未ステージの変更と未追跡ファイルをすべて破棄しますか？ステージ済みの変更は残ります。元に戻せません。"
         }
         L10nKey::ScmAmendConfirm => {
             "直前のコミットを修正しますか？新しいコミットに置き換わるため、すでに取得した人は対応が必要になります。"
@@ -1340,6 +1343,9 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::SwitcherTabsAfterOpening => "このワークスペースを開くとタブが表示されます",
         L10nKey::SwitcherOpenToManage => "このワークスペースを開くと名前の変更や停止ができます",
         L10nKey::SwitcherConnectToUse => "このマシンに接続するとワークスペースを作成できます",
+        L10nKey::SwitcherOrphanPanes => {
+            "バックグラウンドペイン — どのウィンドウにも属さずに実行中のシェル:"
+        }
         L10nKey::SwitcherTabCount => "{n} 個のタブ",
         L10nKey::SwitcherTabCountOne => "1 個のタブ",
         L10nKey::SwitcherActiveTab => "アクティブ",
@@ -1531,6 +1537,9 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::AppReopenTabFailed => "タブを開き直せませんでした: ターミナルが起動しませんでした",
         L10nKey::AppOpenTerminalFailed => "ターミナルを開けませんでした: {error}",
         L10nKey::AppTabsNotRestored => "前回のタブ {count} 個を開き直せませんでした",
+        L10nKey::LaunchWorkspacesLeftRunning => {
+            "このウィンドウだけを復元しました — あと {count} 個のワークスペースがバックグラウンドで実行中です。サイドバーから開き直せます。"
+        }
         L10nKey::AppSshConnectionFailed => "SSH 接続に失敗しました: {error}",
         L10nKey::AppSshReconnectFailed => "SSH 再接続に失敗しました: {error}",
         L10nKey::AppSplitPaneFailed => "ペインを分割できませんでした: {error}",
@@ -1669,6 +1678,26 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
              新しいペインは空ではなく既存の履歴から始まり、追加された分はペインを閉じるときに書き戻されるので失われません。\
              tty7 が設定できる bash と zsh のペインが対象で、独自の引数で起動したシェルはそのままです"
         }
+        L10nKey::IntegrationNoticeBlocked => {
+            "このペインでは tty7 シェル統合がブロックされています。“{wrapper}”がシェルレポートを\
+             横取りしているため、インライン補完と Ctrl+R メニューは利用できません。\
+             シェル独自の履歴検索は引き続き使えます。"
+        }
+        L10nKey::IntegrationNoticeNotEngaged => {
+            "このペインでは tty7 シェル統合が有効になっていないため、インライン補完と Ctrl+R \
+             メニューは利用できません。PTY ラッパー（figterm 系）や未対応のシェル設定が原因の可能性があります。"
+        }
+        L10nKey::PaneTitleDisconnected => "{title} — 切断されました",
+        L10nKey::PaneTitleProcessExited => "{title} — プロセスが終了しました",
+        L10nKey::LoopbackForwardFailed => ":{port} を転送できませんでした — {error}",
+        L10nKey::TrayTooltipAgents => "tty7: {parts}",
+        L10nKey::TrayAgentSep => "、",
+        L10nKey::CursorShapeBlock => "ブロック",
+        L10nKey::CursorShapeBar => "バー",
+        L10nKey::CursorShapeUnderline => "下線",
+        L10nKey::PaletteTryDifferentSearch => "別のキーワードを試してください。",
+        L10nKey::CompletionListingRemote => "リモートを一覧しています…",
+        L10nKey::CompletionRemoteListingFailed => "リモートの一覧に失敗しました — {error}",
         L10nKey::PanelMoreChangedFiles => {
             "… さらに変更されたファイル {count} 個 — 表示するには `git diff` を実行してください"
         }
@@ -1825,6 +1854,12 @@ pub fn translate_variant_ja(key: L10nKey, branch: &'static str) -> Option<&'stat
         }
         (L10nKey::AppTabsNotRestored, "one") => "前回のタブ 1 個を開き直せませんでした",
         (L10nKey::AppTabsNotRestored, "other") => "前回のタブ {count} 個を開き直せませんでした",
+        (L10nKey::LaunchWorkspacesLeftRunning, "one") => {
+            "このウィンドウだけを復元しました — あと 1 個のワークスペースがバックグラウンドで実行中です。サイドバーから開き直せます。"
+        }
+        (L10nKey::LaunchWorkspacesLeftRunning, "other") => {
+            "このウィンドウだけを復元しました — あと {count} 個のワークスペースがバックグラウンドで実行中です。サイドバーから開き直せます。"
+        }
         (L10nKey::ScmFilesChanged, "zero") => "変更されたファイルはありません",
         (L10nKey::ScmFilesChanged, "one") => "1 個のファイルが変更されました",
         (L10nKey::ScmFilesChanged, "other") => "{count} 個のファイルが変更されました",

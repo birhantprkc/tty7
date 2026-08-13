@@ -339,6 +339,7 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsWdInherit => "继承",
         L10nKey::SettingsWdHome => "主目录",
         L10nKey::SettingsWdCustom => "自定义",
+        L10nKey::SettingsWdPathInvalid => "这个目录不存在，该值未保存。",
         L10nKey::SettingsShellFooter => {
             "仅适用于没有可继承目录的 shell，例如窗口的第一个标签页。新标签页和分屏仍会继承活动窗格的目录，已经打开的 shell 会继续运行。"
         }
@@ -1025,7 +1026,9 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::ScmCommitNotFound => "本仓库中没有这个提交。",
         L10nKey::ScmTooManyChanges => "改动过多，仅显示前 {shown} 项（共 {total} 项）。",
         L10nKey::ScmOpenChanges => "查看改动",
-        L10nKey::ScmDiscardAllConfirm => "放弃本仓库的全部改动？此操作无法撤销。",
+        L10nKey::ScmDiscardAllConfirm => {
+            "放弃所有未暂存的改动和未跟踪的文件？已暂存的改动会保留。此操作无法撤销。"
+        }
         L10nKey::ScmAmendConfirm => {
             "修补上一次提交？它会被一个新提交取代，已经拿到旧提交的人需要自行处理。"
         }
@@ -1218,6 +1221,7 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::SwitcherTabsAfterOpening => "打开这个工作区后才能看到它的标签页。",
         L10nKey::SwitcherOpenToManage => "打开这个工作区后才能重命名或停止它。",
         L10nKey::SwitcherConnectToUse => "连接这台机器后才能在上面新建工作区。",
+        L10nKey::SwitcherOrphanPanes => "后台窗格——仍在运行、但不属于任何窗口的 shell：",
         L10nKey::SwitcherTabCount => "{n} 个标签页",
         L10nKey::SwitcherTabCountOne => "1 个标签页",
         L10nKey::SwitcherActiveTab => "当前",
@@ -1402,6 +1406,9 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::AppReopenTabFailed => "无法重新打开标签页：没有启动终端",
         L10nKey::AppOpenTerminalFailed => "无法打开终端：{error}",
         L10nKey::AppTabsNotRestored => "上次的 {count} 个标签页没能重新打开",
+        L10nKey::LaunchWorkspacesLeftRunning => {
+            "只恢复了这个窗口——还有 {count} 个工作区在后台运行，可从侧边栏重新打开。"
+        }
         L10nKey::AppSshConnectionFailed => "SSH 连接失败：{error}",
         L10nKey::AppSshReconnectFailed => "SSH 重新连接失败：{error}",
         L10nKey::AppSplitPaneFailed => "无法拆分窗格：{error}",
@@ -1522,6 +1529,25 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
              新面板会从你已有的历史开始，而不是一片空白；面板关闭时，它新增的部分会写回原来的历史文件，不会丢。\
              只对 tty7 能接管的 bash 和 zsh 面板生效；用你自己参数启动的 shell 不受影响。"
         }
+        L10nKey::IntegrationNoticeBlocked => {
+            "此窗格中的 tty7 shell 集成被拦截——“{wrapper}”截获了 shell 上报，\
+             内联补全和 Ctrl+R 菜单不可用。shell 自带的历史搜索仍可使用。"
+        }
+        L10nKey::IntegrationNoticeNotEngaged => {
+            "此窗格中的 tty7 shell 集成尚未生效，内联补全和 Ctrl+R 菜单不可用。\
+             PTY 包装器（figterm 类）或不受支持的 shell 配置可能导致此问题。"
+        }
+        L10nKey::PaneTitleDisconnected => "{title} — 已断开",
+        L10nKey::PaneTitleProcessExited => "{title} — 进程已退出",
+        L10nKey::LoopbackForwardFailed => "无法转发 :{port}——{error}",
+        L10nKey::TrayTooltipAgents => "tty7：{parts}",
+        L10nKey::TrayAgentSep => "、",
+        L10nKey::CursorShapeBlock => "块状",
+        L10nKey::CursorShapeBar => "竖线",
+        L10nKey::CursorShapeUnderline => "下划线",
+        L10nKey::PaletteTryDifferentSearch => "换个关键词试试。",
+        L10nKey::CompletionListingRemote => "正在列出远程目录…",
+        L10nKey::CompletionRemoteListingFailed => "远程目录列表失败——{error}",
         L10nKey::PanelMoreChangedFiles => "…还有 {count} 个变更文件——运行 git diff 查看。",
         L10nKey::PanelMoreChangedFiles => "…还有 {count} 个变更文件——运行 `git diff` 查看。",
         L10nKey::ScmFilesChanged => "{count} 个文件改动",
@@ -1667,6 +1693,12 @@ pub fn translate_variant_zh(key: L10nKey, branch: &'static str) -> Option<&'stat
         (L10nKey::SftpReplaceBody, "other") => "{names} 在这个文件夹里已经存在，上传会覆盖它们。",
         (L10nKey::AppTabsNotRestored, "one") => "上次的 1 个标签页没能重新打开",
         (L10nKey::AppTabsNotRestored, "other") => "上次的 {count} 个标签页没能重新打开",
+        (L10nKey::LaunchWorkspacesLeftRunning, "one") => {
+            "只恢复了这个窗口——还有 1 个工作区在后台运行，可从侧边栏重新打开。"
+        }
+        (L10nKey::LaunchWorkspacesLeftRunning, "other") => {
+            "只恢复了这个窗口——还有 {count} 个工作区在后台运行，可从侧边栏重新打开。"
+        }
         (L10nKey::PanelMoreChangedFiles, "zero") => "…还有 0 个变更文件——运行 git diff 查看。",
         (L10nKey::PanelMoreChangedFiles, "one") => "…还有 1 个变更文件——运行 git diff 查看。",
         (L10nKey::ScmFilesChanged, "zero") => "没有文件改动",

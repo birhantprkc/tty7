@@ -387,6 +387,9 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::SettingsWdInherit => "Inherit",
         L10nKey::SettingsWdHome => "Home",
         L10nKey::SettingsWdCustom => "Custom",
+        L10nKey::SettingsWdPathInvalid => {
+            "That directory does not exist — the value was not saved."
+        }
         L10nKey::SettingsShellFooter => {
             "Applies to shells with nothing to inherit — like the first tab of a window. New tabs and splits keep inheriting the active pane's directory, and shells already open keep running."
         }
@@ -1081,7 +1084,8 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::ScmTooManyChanges => "Showing the first {shown} of {total} changes.",
         L10nKey::ScmOpenChanges => "Open Changes",
         L10nKey::ScmDiscardAllConfirm => {
-            "Discard every change in this repository? This cannot be undone."
+            "Discard all unstaged and untracked changes? Staged changes are kept. \
+             This cannot be undone."
         }
         L10nKey::ScmAmendConfirm => {
             "Amend the last commit? It will be replaced by a new one, so anyone who already has it has to reconcile."
@@ -1302,6 +1306,9 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::SwitcherTabsAfterOpening => "Open this workspace to see its tabs.",
         L10nKey::SwitcherOpenToManage => "Open this workspace to rename or stop it.",
         L10nKey::SwitcherConnectToUse => "Connect to this machine to open a workspace on it.",
+        L10nKey::SwitcherOrphanPanes => {
+            "Background panes — shells still running outside any window:"
+        }
         L10nKey::SwitcherTabCount => "{n} tabs",
         L10nKey::SwitcherTabCountOne => "1 tab",
         L10nKey::SwitcherActiveTab => "active",
@@ -1489,6 +1496,9 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::AppReopenTabFailed => "Could not reopen the tab: no terminal started",
         L10nKey::AppOpenTerminalFailed => "Could not open a terminal: {error}",
         L10nKey::AppTabsNotRestored => "{count} tabs from last time could not be reopened",
+        L10nKey::LaunchWorkspacesLeftRunning => {
+            "Only this window was restored — {count} workspaces are still running in the background. Reopen them from the sidebar."
+        }
         L10nKey::AppSshConnectionFailed => "SSH connection failed: {error}",
         L10nKey::AppSshReconnectFailed => "SSH reconnect failed: {error}",
         L10nKey::AppSplitPaneFailed => "Could not split the pane: {error}",
@@ -1616,6 +1626,27 @@ pub fn translate_en(key: L10nKey) -> &'static str {
              adds is written back when it closes, so nothing is lost. Applies to bash and zsh \
              panes that tty7 can set up; a shell started with your own arguments is left alone."
         }
+        L10nKey::IntegrationNoticeBlocked => {
+            "tty7 shell integration is blocked in this pane — \u{201c}{wrapper}\u{201d} is \
+             intercepting shell reports, so inline completion and the Ctrl+R menu are \
+             unavailable. The shell's own history search still works."
+        }
+        L10nKey::IntegrationNoticeNotEngaged => {
+            "tty7 shell integration hasn't engaged in this pane, so inline completion and the \
+             Ctrl+R menu are unavailable. A PTY wrapper (figterm-style) or an unsupported shell \
+             setup can cause this."
+        }
+        L10nKey::PaneTitleDisconnected => "{title} — disconnected",
+        L10nKey::PaneTitleProcessExited => "{title} — process exited",
+        L10nKey::LoopbackForwardFailed => "Couldn't forward :{port} — {error}",
+        L10nKey::TrayTooltipAgents => "tty7 — {parts}",
+        L10nKey::TrayAgentSep => ", ",
+        L10nKey::CursorShapeBlock => "Block",
+        L10nKey::CursorShapeBar => "Bar",
+        L10nKey::CursorShapeUnderline => "Underline",
+        L10nKey::PaletteTryDifferentSearch => "Try a different search.",
+        L10nKey::CompletionListingRemote => "listing remote…",
+        L10nKey::CompletionRemoteListingFailed => "remote listing failed — {error}",
         L10nKey::PanelMoreChangedFiles => {
             "… and {count} more changed files — run git diff to see them."
         }
@@ -1774,6 +1805,12 @@ pub fn translate_variant_en(key: L10nKey, branch: &'static str) -> Option<&'stat
         (L10nKey::AppTabsNotRestored, "one") => "1 tab from last time could not be reopened",
         (L10nKey::AppTabsNotRestored, "other") => {
             "{count} tabs from last time could not be reopened"
+        }
+        (L10nKey::LaunchWorkspacesLeftRunning, "one") => {
+            "Only this window was restored — 1 workspace is still running in the background. Reopen it from the sidebar."
+        }
+        (L10nKey::LaunchWorkspacesLeftRunning, "other") => {
+            "Only this window was restored — {count} workspaces are still running in the background. Reopen them from the sidebar."
         }
         (L10nKey::ScmFilesChanged, "zero") => "No files changed",
         (L10nKey::ScmFilesChanged, "one") => "1 file changed",
