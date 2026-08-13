@@ -226,6 +226,59 @@ const SPLIT_FORWARD_ROW_BELOW: f32 = 620.;
 /// window the report came from, so the two ends take a line each.
 const STACK_FORWARD_ENDS_BELOW: f32 = 340.;
 
+/// The scrollback presets, and the labels their cells carry, in draw order.
+/// One list each so the number a cell writes is the number it shows —
+/// `preset_row_labels_name_the_value_they_write` holds the two together.
+const SCROLLBACK_BUCKETS: [usize; 3] = [1_000, 10_000, 100_000];
+const SCROLLBACK_LABELS: [&str; 3] = ["1,000", "10,000", "100,000"];
+
+/// The notify-threshold presets. The last one is drawn in minutes, which is
+/// why these labels are written out rather than derived.
+const NOTIFY_THRESHOLD_BUCKETS: [u64; 4] = [5, 10, 30, 60];
+const NOTIFY_THRESHOLD_LABELS: [&str; 4] = ["5s", "10s", "30s", "1m"];
+
+/// Which preset a live value *is*, and — when it is none of them — the label
+/// for the trailing cell that names it.
+///
+/// The match is exact on purpose. Matching a *range* is what made
+/// `scrollback_limit: 5000` light up "10,000" and `notify_threshold_secs: 20`
+/// light up "30s", with no digits anywhere on the row to correct the
+/// impression, and clicking the cell that was wrongly lit overwrote the real
+/// value with the bucket's (#550).
+fn preset_choice<T: Copy + PartialEq>(
+    buckets: &[T],
+    value: T,
+    name: impl FnOnce(T) -> String,
+) -> (Option<usize>, Option<String>) {
+    match buckets.iter().position(|&b| b == value) {
+        Some(ix) => (Some(ix), None),
+        None => (
+            None,
+            Some(t_fmt(
+                L10nKey::SettingsCustomValue,
+                &[("value", &name(value))],
+            )),
+        ),
+    }
+}
+
+/// `50000` beside cells reading `10,000` and `100,000` looks like a different
+/// kind of number, so the custom cell groups its digits the way the presets
+/// next to it are written. Every locale tty7 ships writes these counts the
+/// same way — the preset labels themselves are one set of literals for all
+/// three.
+fn group_thousands(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, c) in digits.char_indices() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
 fn settings_row_id(label: &str, _desc: &str) -> SharedString {
     SharedString::from(format!("settings-row-{label}"))
 }
@@ -1817,10 +1870,57 @@ impl Tty7App {
         cx: &mut Context<Self>,
         on_pick: impl Fn(&mut Self, usize, &mut Window, &mut Context<Self>) + 'static,
     ) -> AnyElement {
+        self.segmented_full(sf, id, options, Some(selected), None, cx, on_pick)
+    }
+
+    /// A segmented control over a fixed set of values, used where the config
+    /// accepts anything in a range. When the live value matches a bucket
+    /// exactly that bucket is highlighted; when it does not, a trailing
+    /// "Custom (N)" cell carries the highlight instead of the nearest bucket
+    /// getting a label it does not have — `scrollback_limit: 5000` used to
+    /// light up "10,000", and clicking that cell silently overwrote the real
+    /// value with the bucket's (#550).
+    ///
+    /// `selected` and `custom_label` come as a pair out of [`preset_choice`]:
+    /// exactly one of them is `Some`, so exactly one cell is highlighted. The
+    /// custom cell is not a button — there is no bucket value behind it to
+    /// write — so it takes neither a click handler nor a pointer cursor, and
+    /// the buckets beside it stay clickable to move off the custom value.
+    pub(crate) fn segmented_valued(
+        &self,
+        id: impl Into<SharedString>,
+        options: &[&str],
+        selected: Option<usize>,
+        custom_label: Option<String>,
+        cx: &mut Context<Self>,
+        on_pick: impl Fn(&mut Self, usize, &mut Window, &mut Context<Self>) + 'static,
+    ) -> AnyElement {
+        let sf = cx.global::<presets::Surfaces>().window;
+        self.segmented_full(sf, id, options, selected, custom_label, cx, on_pick)
+    }
+
+    fn segmented_full(
+        &self,
+        sf: presets::Surface,
+        id: impl Into<SharedString>,
+        options: &[&str],
+        selected: Option<usize>,
+        custom_label: Option<String>,
+        cx: &mut Context<Self>,
+        on_pick: impl Fn(&mut Self, usize, &mut Window, &mut Context<Self>) + 'static,
+    ) -> AnyElement {
         let border = cx.theme().border;
         let id: SharedString = id.into();
         let on_pick = std::rc::Rc::new(on_pick);
-        let count = options.len();
+        let count = options.len() + usize::from(custom_label.is_some());
+        // The display cells: the fixed buckets, then the custom cell if the
+        // live value matched none of them.
+        let cells: Vec<(String, Option<usize>)> = options
+            .iter()
+            .enumerate()
+            .map(|(i, l)| (l.to_string(), Some(i)))
+            .chain(custom_label.map(|l| (l, None)))
+            .collect();
         h_flex()
             .id(gpui::ElementId::Name(id.clone()))
             .h(px(24.))
@@ -1829,19 +1929,20 @@ impl Tty7App {
             .border_color(border)
             .bg(gpui::rgb(sf.base))
             .overflow_hidden()
-            .children(options.iter().enumerate().map(|(i, label)| {
-                let active = i == selected;
+            .children(cells.into_iter().enumerate().map(|(i, (label, bucket))| {
+                // A bucket is highlighted only on an exact match, and the
+                // custom cell (`bucket == None`) exactly when no bucket was.
+                let active = bucket == selected;
                 let on_pick = on_pick.clone();
                 let corners =
                     rounding::segment_corners(i, count, rounding::TRACK_RADIUS, rounding::HAIRLINE);
-                h_flex()
+                let cell = h_flex()
                     .id(gpui::ElementId::NamedInteger(id.clone(), i as u64))
                     .items_center()
                     .justify_center()
                     .h_full()
                     .px_2p5()
                     .text_sm()
-                    .cursor_pointer()
                     .rounded_corners(corners)
                     .when(i > 0, |s| s.border_l_1().border_color(border))
                     .when(active, |s| {
@@ -1853,11 +1954,18 @@ impl Tty7App {
                         s.text_color(gpui::rgb(sf.text_resting))
                             .hover(|h| h.bg(gpui::rgb(sf.hover)))
                     })
-                    .active(|s| s.bg(gpui::rgb(sf.pressed)))
-                    .child(label.to_string())
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        on_pick(this, i, window, cx);
-                    }))
+                    .child(label);
+                match bucket {
+                    Some(ix) => cell
+                        .cursor_pointer()
+                        .active(|s| s.bg(gpui::rgb(sf.pressed)))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            on_pick(this, ix, window, cx);
+                        })),
+                    // The custom cell names the current value; it is not a
+                    // button, because there is no bucket value to write.
+                    None => cell,
+                }
             }))
             .into_any_element()
     }
@@ -4779,11 +4887,13 @@ impl Tty7App {
         let smooth_scroll = cfg.smooth_scroll;
         let mouse_reporting = cfg.mouse_reporting;
         let bell = cfg.bell;
-        let scrollback_idx = match cfg.scrollback_limit {
-            n if n <= 1_000 => 0,
-            n if n <= 10_000 => 1,
-            _ => 2,
-        };
+        // A bucket highlights only on an exact match; any other value gets a
+        // "Custom (N)" cell so the highlight never claims a number the config
+        // does not have, and clicking that cell cannot overwrite it (#550).
+        // Read off `cfg` here, with the rest of the copies: the control itself
+        // is built further down, past calls that borrow `cx` mutably.
+        let (scrollback_sel, scrollback_custom) =
+            preset_choice(&SCROLLBACK_BUCKETS, cfg.scrollback_limit, group_thousands);
         let scroll_slider = match self.active_settings() {
             Some(s) => s.scroll_slider.clone(),
             None => return div().into_any_element(),
@@ -4834,17 +4944,17 @@ impl Tty7App {
                 .child(Input::new(&link_file_command_input).small())
                 .into_any_element()
         });
-        let scrollback_radio = self.segmented(
+        let scrollback_radio = self.segmented_valued(
             "term-scrollback",
-            &["1,000", "10,000", "100,000"],
-            scrollback_idx,
+            &SCROLLBACK_LABELS,
+            scrollback_sel,
+            scrollback_custom,
             cx,
             |this, ix, _w, cx| {
-                let lines = match ix {
-                    0 => 1_000,
-                    1 => 10_000,
-                    _ => 100_000,
-                };
+                let lines = SCROLLBACK_BUCKETS
+                    .get(ix)
+                    .copied()
+                    .unwrap_or(Config::default().scrollback_limit);
                 this.set_scrollback_limit(lines, cx);
             },
         );
@@ -5333,12 +5443,13 @@ impl Tty7App {
             NotifyMode::Unfocused => 1,
             NotifyMode::Always => 2,
         };
-        let threshold_idx = match cfg.notify_threshold_secs {
-            n if n <= 5 => 0,
-            n if n <= 10 => 1,
-            n if n <= 30 => 2,
-            _ => 3,
-        };
+        // Exact-match highlight with a "Custom (Ns)" fallback, same as the
+        // scrollback row: a hand-set 20s used to light up "30s" (#550).
+        let (threshold_sel, threshold_custom) = preset_choice(
+            &NOTIFY_THRESHOLD_BUCKETS,
+            cfg.notify_threshold_secs,
+            |secs| format!("{secs}s"),
+        );
         let notify_radio = self.segmented(
             "wt-notify",
             &[
@@ -5357,18 +5468,17 @@ impl Tty7App {
                 this.set_notify_mode(mode, cx);
             },
         );
-        let threshold_radio = self.segmented(
+        let threshold_radio = self.segmented_valued(
             "wt-notify-threshold",
-            &["5s", "10s", "30s", "1m"],
-            threshold_idx,
+            &NOTIFY_THRESHOLD_LABELS,
+            threshold_sel,
+            threshold_custom,
             cx,
             |this, ix, _w, cx| {
-                let secs = match ix {
-                    0 => 5,
-                    1 => 10,
-                    2 => 30,
-                    _ => 60,
-                };
+                let secs = NOTIFY_THRESHOLD_BUCKETS
+                    .get(ix)
+                    .copied()
+                    .unwrap_or(Config::default().notify_threshold_secs);
                 this.set_notify_threshold(secs, cx);
             },
         );
@@ -6805,6 +6915,71 @@ mod tests {
             settings_row_width(Ssh, false, NARROWEST_WINDOW, 1.),
             CONTENT_MIN_W
         );
+    }
+
+    /// A preset row lights up the bucket the value *is*, and nothing when it
+    /// is none of them — the range match it used to do labelled a hand-set
+    /// value with a number the config did not hold, and the row carried no
+    /// digits anywhere to correct it (#550).
+    #[test]
+    fn a_preset_row_highlights_only_the_bucket_the_value_actually_is() {
+        // The default lands on a bucket, so the common case still reads as a
+        // plain radio row.
+        let (sel, custom) = preset_choice(
+            &SCROLLBACK_BUCKETS,
+            Config::default().scrollback_limit,
+            group_thousands,
+        );
+        assert_eq!((sel, custom), (Some(1), None));
+
+        // 50,000 is the value `docs/reference/configuration.mdx` puts in its
+        // example config, so this is what following the documentation shows.
+        let (sel, custom) = preset_choice(&SCROLLBACK_BUCKETS, 50_000, group_thousands);
+        assert_eq!(sel, None, "50,000 is not one of the presets");
+        let custom = custom.expect("a value off the presets names itself");
+        assert!(
+            custom.contains("50,000"),
+            "the custom cell has to carry the real value, got {custom:?}"
+        );
+
+        // Boundaries: the old range match lit "10,000" for everything from
+        // 1,001 up, and "100,000" for everything above that.
+        assert_eq!(
+            preset_choice(&SCROLLBACK_BUCKETS, 1_001, group_thousands).0,
+            None
+        );
+        assert_eq!(
+            preset_choice(&SCROLLBACK_BUCKETS, 100_000, group_thousands).0,
+            Some(2)
+        );
+
+        // Same rule on the notify row, where 20s used to light up "30s".
+        let (sel, custom) = preset_choice(&NOTIFY_THRESHOLD_BUCKETS, 20, |secs| format!("{secs}s"));
+        assert_eq!(sel, None);
+        assert!(custom.is_some_and(|c| c.contains("20s")));
+        assert_eq!(
+            preset_choice(&NOTIFY_THRESHOLD_BUCKETS, 60, |secs| format!("{secs}s")).0,
+            Some(3),
+            "60s is the '1m' cell, not a custom value"
+        );
+    }
+
+    /// Each preset cell has to name the number clicking it writes, and the
+    /// custom cell has to be written the same way as the cells beside it.
+    #[test]
+    fn preset_row_labels_name_the_value_they_write() {
+        assert_eq!(SCROLLBACK_BUCKETS.len(), SCROLLBACK_LABELS.len());
+        for (bucket, label) in SCROLLBACK_BUCKETS.iter().zip(SCROLLBACK_LABELS) {
+            assert_eq!(group_thousands(*bucket), label);
+        }
+        assert_eq!(
+            NOTIFY_THRESHOLD_BUCKETS.len(),
+            NOTIFY_THRESHOLD_LABELS.len()
+        );
+        // Grouping starts at four digits and repeats every three.
+        assert_eq!(group_thousands(0), "0");
+        assert_eq!(group_thousands(999), "999");
+        assert_eq!(group_thousands(1_000_000), "1,000,000");
     }
 
     /// The thresholds are widths a *label* needs, and a reader who scaled the
