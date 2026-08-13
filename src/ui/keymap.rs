@@ -11,16 +11,37 @@ use crate::ui::palette::CommandGroup;
 use crate::ui::settings::humanize_action;
 use crate::ui::theme::set_menus;
 
-#[derive(Default)]
-struct BoundKeystrokes(Vec<(String, Option<&'static str>)>);
-impl Global for BoundKeystrokes {}
+/// The bindings that were already in the keymap before tty7 put its own
+/// there. gpui-component installs a table of its own from `gpui_component::
+/// init` — the `Input` context's editing keys, the list and menu navigation,
+/// the escape that closes a dialog — and it has no entry point to install
+/// them a second time. A rebuild replaces the whole map, so it has to lay
+/// these back down first, in the order they were added, or the map that comes
+/// out has no backspace in any text field in the app (#548).
+struct BaseBindings(Vec<KeyBinding>);
+impl Global for BaseBindings {}
 
 pub fn init(cx: &mut App) {
-    let effective = effective_bindings(cx);
-    let mut bindings = action_bindings(&effective);
-    bindings.push(KeyBinding::new("secondary-+", IncreaseFontSize, None));
-    bindings.push(KeyBinding::new("tab", SendTab, Some("Terminal")));
-    bindings.push(KeyBinding::new("shift-tab", SendBackTab, Some("Terminal")));
+    if cx.try_global::<BaseBindings>().is_none() {
+        let base: Vec<KeyBinding> = cx.key_bindings().borrow().bindings().cloned().collect();
+        cx.set_global(BaseBindings(base));
+    }
+    rebuild_keymap(cx);
+    cx.on_action(|_: &Quit, cx: &mut App| cx.quit());
+    set_menus(cx);
+}
+
+/// The fixed bindings every keymap carries, whatever the config says. These
+/// are the terminal's own keys (Tab/BackTab as input), the font-size step
+/// that has no settings row, and the modal-context guards the dispatch path
+/// needs — none of them come from `effective_bindings`, so a rebuild that
+/// only replayed the config would drop them.
+fn fixed_bindings() -> Vec<KeyBinding> {
+    let mut bindings = vec![
+        KeyBinding::new("secondary-+", IncreaseFontSize, None),
+        KeyBinding::new("tab", SendTab, Some("Terminal")),
+        KeyBinding::new("shift-tab", SendBackTab, Some("Terminal")),
+    ];
     // The switcher's footer tells you Tab is the way across to the tab column
     // once a query is in the box. gpui-component's Root binds `tab` to its
     // focus walker, actions are dispatched before key listeners, and the panel
@@ -38,30 +59,54 @@ pub fn init(cx: &mut App) {
     // out of the modal, onto whichever chrome tile is behind it, ring and all.
     bindings.push(KeyBinding::new("tab", NoAction {}, Some("Palette")));
     bindings.push(KeyBinding::new("shift-tab", NoAction {}, Some("Palette")));
-    cx.bind_keys(bindings);
-    cx.set_global(BoundKeystrokes(bound_keystrokes(&effective)));
+    bindings
+}
 
-    cx.on_action(|_: &Quit, cx: &mut App| cx.quit());
-    set_menus(cx);
+/// Replaces the keymap with the full set: the bindings tty7 inherited, then
+/// the ones the live config asks for, then the fixed ones.
+///
+/// gpui's `Keymap::add_bindings` only ever pushes — it never dedups and
+/// nothing retires a binding — so rebinding by *appending* (the old `rebind`)
+/// leaked one full table per call, and every keystroke walks the whole map.
+/// Clearing first makes a rebind O(map) instead of O(map × calls), and makes
+/// it safe to drive from the config watcher: a hand edit that only reorders
+/// or re-comments the file reloads to an identical triple and never reaches
+/// here, while a real change rebuilds once (#548). The order is the order
+/// `init` bound them in, and gpui reads the map back to front, so tty7's
+/// bindings still win over the inherited ones.
+fn rebuild_keymap(cx: &mut App) {
+    let effective = effective_bindings(cx);
+    let mut bindings: Vec<KeyBinding> = cx
+        .try_global::<BaseBindings>()
+        .map(|base| base.0.clone())
+        .unwrap_or_default();
+    bindings.extend(action_bindings(&effective));
+    bindings.extend(fixed_bindings());
+    cx.clear_key_bindings();
+    cx.bind_keys(bindings);
 }
 
 pub fn rebind(cx: &mut App) {
-    let previous = cx
-        .try_global::<BoundKeystrokes>()
-        .map(|b| b.0.clone())
-        .unwrap_or_default();
-    let effective = effective_bindings(cx);
-
-    let mut bindings: Vec<KeyBinding> = previous
-        .iter()
-        .filter(|(k, _)| keystroke_is_valid(k))
-        .map(|(k, ctx)| KeyBinding::new(k, NoAction {}, *ctx))
-        .collect();
-    bindings.extend(action_bindings(&effective));
-    cx.bind_keys(bindings);
-    cx.set_global(BoundKeystrokes(bound_keystrokes(&effective)));
-
+    rebuild_keymap(cx);
     set_menus(cx);
+}
+
+/// The three config fields `effective_bindings` reads, as one comparable
+/// value. The config watcher reloads on every write — including the app's
+/// own `save()`, which fires on a sidebar drag — so it compares the triple
+/// before and after and only rebinds when one of these actually moved;
+/// otherwise each save would rebuild the keymap for nothing (#548).
+pub(crate) fn keybinding_config(cx: &App) -> (Vec<(String, String)>, String, String) {
+    let cfg = cx.global::<Config>();
+    let mut overrides: Vec<(String, String)> = cfg
+        .keybindings
+        .iter()
+        .map(|(a, k)| (a.clone(), k.clone()))
+        .collect();
+    // A HashMap's order is not stable across reloads, and a reordered map is
+    // not a changed binding set.
+    overrides.sort();
+    (overrides, cfg.keybinding_preset.clone(), cfg.prefix.clone())
 }
 
 const INSERT_NEWLINE_DEFAULT: &str = "shift-enter";
@@ -138,6 +183,11 @@ fn action_bindings(effective: &[(String, String)]) -> Vec<KeyBinding> {
     bindings
 }
 
+/// The keystroke and context of every binding `action_bindings` installs.
+/// The rebind used to keep this in a global to retire the previous set one
+/// `NoAction` at a time; a rebuild replaces the whole map instead, so this is
+/// now only the tests' way of asking what a config would install.
+#[cfg(test)]
 fn bound_keystrokes(effective: &[(String, String)]) -> Vec<(String, Option<&'static str>)> {
     let extras = extra_keystrokes(effective);
     effective
@@ -1484,6 +1534,96 @@ mod gpui_tests {
                     .map(|(_, k)| k.as_str()),
                 Some(per_platform("secondary-d", "secondary-shift-d"))
             );
+        });
+    }
+
+    #[gpui::test]
+    fn the_keybinding_triple_only_moves_when_a_binding_does(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            gpui_component::init(cx);
+            cx.set_global(Config::default());
+            init(cx);
+
+            let before = keybinding_config(cx);
+            assert_eq!(
+                keybinding_config(cx),
+                before,
+                "reading the config twice changes nothing"
+            );
+
+            // An unrelated edit leaves the triple alone — this is the gate the
+            // watcher compares, and a sidebar drag must not rebind.
+            cx.global_mut::<Config>().dim_inactive_panes = false;
+            assert_eq!(keybinding_config(cx), before);
+
+            // A real binding edit moves it.
+            cx.global_mut::<Config>()
+                .keybindings
+                .insert("RenameTab".to_string(), "ctrl-shift-r".to_string());
+            assert_ne!(keybinding_config(cx), before);
+
+            // So does the preset, and the prefix.
+            let with_override = keybinding_config(cx);
+            cx.global_mut::<Config>().keybinding_preset = "tmux".to_string();
+            assert_ne!(keybinding_config(cx), with_override);
+            let with_preset = keybinding_config(cx);
+            cx.global_mut::<Config>().prefix = "ctrl-a".to_string();
+            assert_ne!(keybinding_config(cx), with_preset);
+        });
+    }
+
+    #[gpui::test]
+    fn repeated_rebinds_do_not_grow_the_keymap(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            gpui_component::init(cx);
+            cx.set_global(Config::default());
+            init(cx);
+            let size = cx.key_bindings().borrow().bindings().len();
+            // A rebind that clears first stays the same size however many
+            // times it runs; the append-only one this replaced grew by a full
+            // table each call, and every keystroke walks the whole map (#548).
+            for _ in 0..3 {
+                rebind(cx);
+            }
+            assert_eq!(
+                cx.key_bindings().borrow().bindings().len(),
+                size,
+                "rebind clears before it binds, so the map does not grow"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn a_rebuild_keeps_the_bindings_tty7_did_not_install(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            // gpui-component binds the whole `Input` editing table — backspace
+            // among it — from its own `init`, which runs once, before ours. A
+            // rebuild replaces the map, so it has to carry them; without this
+            // the first rebind left every text field in the app unable to
+            // delete a character (#548).
+            gpui_component::init(cx);
+            cx.set_global(Config::default());
+
+            let backspace = |cx: &App| {
+                let typed = [Keystroke::parse("backspace").unwrap()];
+                cx.key_bindings()
+                    .borrow()
+                    .all_bindings_for_input(&typed)
+                    .iter()
+                    .map(|b| b.action().name().to_string())
+                    .collect::<Vec<_>>()
+            };
+
+            let inherited = backspace(cx);
+            assert!(
+                !inherited.is_empty(),
+                "gpui-component binds backspace before tty7 touches the keymap"
+            );
+
+            init(cx);
+            assert_eq!(backspace(cx), inherited, "init must not drop them");
+            rebind(cx);
+            assert_eq!(backspace(cx), inherited, "nor may a rebind");
         });
     }
 }
