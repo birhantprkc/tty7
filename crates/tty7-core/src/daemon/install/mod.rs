@@ -449,6 +449,15 @@ pub fn record_remote_mismatches(entries: Vec<MismatchedRemoteDaemon>) {
     }
 }
 
+/// Retires the notes a machine earned before its server was restarted or
+/// replaced into this build. Keyed the way the notes are — by the route origin
+/// that discovered them — so notes about other machines stay owed.
+pub fn forget_remote_mismatch(host: &str) {
+    if let Ok(mut slot) = MISMATCHED.lock() {
+        slot.retain(|e| e.host != host);
+    }
+}
+
 pub fn take_mismatched_remote_daemons() -> Vec<MismatchedRemoteDaemon> {
     MISMATCHED
         .lock()

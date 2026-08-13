@@ -1059,12 +1059,21 @@ impl Tty7App {
         // A create still waiting on this machine's link dies with the link:
         // calling the connect off is calling the create off, or the next
         // successful connect would grow a workspace nobody asked it for.
+        // One parked on a dialect refusal is waiting all the same, so it
+        // dies here too.
         if self
             .pending_create
             .as_ref()
             .is_some_and(|p| &p.target == target)
         {
             self.pending_create = None;
+        }
+        if self
+            .parked_create
+            .as_ref()
+            .is_some_and(|p| &p.target == target)
+        {
+            self.parked_create = None;
         }
         cx.notify();
     }
@@ -1975,6 +1984,18 @@ impl Tty7App {
                                     && Some(&choice.target) == dismiss_target.as_ref()
                                 {
                                     this.connect = None;
+                                }
+                                // Dismissing the refusal is giving up on the
+                                // machine, and the create parked on it goes
+                                // with it — an update run weeks later must
+                                // not revive a workspace nobody remembers
+                                // asking for.
+                                if this
+                                    .parked_create
+                                    .as_ref()
+                                    .is_some_and(|p| Some(&p.target) == dismiss_target.as_ref())
+                                {
+                                    this.parked_create = None;
                                 }
                                 cx.notify();
                             },

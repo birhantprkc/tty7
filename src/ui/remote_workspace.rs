@@ -530,12 +530,7 @@ impl Tty7App {
                 // A create that was waiting on this link (the switcher's form,
                 // asked of a machine that was not connected yet) can now run:
                 // the link just told us the home directory to root it at.
-                if self
-                    .pending_create
-                    .as_ref()
-                    .is_some_and(|p| p.target == choice.target)
-                {
-                    let pending = self.pending_create.take().expect("checked above");
+                if let Some(pending) = self.take_create_waiting_on(&choice.target) {
                     self.close_switcher(window, cx);
                     self.create_remote_workspace(pending.target, home, window, cx);
                     self.name_fresh_workspace(pending.name, window, cx);
@@ -548,12 +543,67 @@ impl Tty7App {
                     .as_ref()
                     .is_some_and(|p| p.target == choice.target)
                 {
-                    self.pending_create = None;
+                    // A dialect refusal is the one failure with a button on
+                    // it — the "update server" this window is about to offer.
+                    // The create moves aside to wait for that answer instead
+                    // of dying with the attempt, or the update would end in
+                    // nothing and the user would have to ask all over again.
+                    // Every other failure still calls the create off.
+                    if crate::daemon::control::is_dialect_refusal(&error) {
+                        self.parked_create = self.pending_create.take();
+                    } else {
+                        self.pending_create = None;
+                    }
                 }
                 self.connect = Some(ConnectFlow::Failed { choice, error });
             }
         }
         cx.notify();
+    }
+
+    /// The create waiting on this machine's link, wherever it waits: parked on
+    /// the app by the form (`pending_create`), or set aside by a dialect
+    /// refusal until the server over there was updated (`parked_create`).
+    /// Either way it is spent by the connect that finally lands.
+    fn take_create_waiting_on(
+        &mut self,
+        target: &RemoteTarget,
+    ) -> Option<crate::ui::switcher::PendingCreate> {
+        for slot in [&mut self.pending_create, &mut self.parked_create] {
+            if slot.as_ref().is_some_and(|p| &p.target == target) {
+                return slot.take();
+            }
+        }
+        None
+    }
+
+    /// The far end was just cycled into a server this build speaks to — the
+    /// answer a create refused for the dialect has been waiting on. Reconnects
+    /// whatever the restart cut, and connects at the machine again if a create
+    /// is still parked on it, so the workspace the user asked for finally
+    /// exists; `finish_connect` finds the create via `take_create_waiting_on`.
+    fn server_replaced(
+        &mut self,
+        target: &RemoteTarget,
+        label: &str,
+        origin: &str,
+        cx: &mut Context<Self>,
+    ) {
+        reconnect_after_restart(origin, cx);
+        if self
+            .parked_create
+            .as_ref()
+            .is_some_and(|p| &p.target == target)
+        {
+            self.connect_to_host(
+                HostChoice {
+                    target: target.clone(),
+                    label: label.to_string(),
+                    detail: String::new(),
+                },
+                cx,
+            );
+        }
     }
 
     pub(crate) fn open_remote_workspace(
@@ -745,7 +795,7 @@ impl Tty7App {
             let _ = this.update_in(cx, |this, window, cx| match outcome {
                 Ok(()) => {
                     log::info!("{label} is now serving this client's build");
-                    reconnect_after_restart(&host, cx);
+                    this.server_replaced(&target_for_error, &label, &host, cx);
                 }
                 Err(e) => {
                     log::warn!("could not restart tty7's server on {label}: {e}");
@@ -819,7 +869,7 @@ impl Tty7App {
             let _ = this.update_in(cx, |this, window, cx| match outcome {
                 Ok(()) => {
                     log::info!("{label} is now serving this client's build");
-                    reconnect_after_restart(&host, cx);
+                    this.server_replaced(&target_for_error, &label, &host, cx);
                 }
                 Err(e) => {
                     log::warn!("could not replace tty7's server on {label}: {e}");
@@ -1343,7 +1393,11 @@ fn pump_tick(cx: &mut gpui::App) -> bool {
                 // Whatever we told the far end went down with the link.
                 link.attach_sent.clear();
                 match link.next_attempt {
-                    None => link.next_attempt = Some(now + link.backoff.advance()),
+                    // Scheduling is not failing: the counter moves in
+                    // `finish_attempt` when an attempt actually comes back
+                    // wrong, so the strip's "attempt N" stays the number of
+                    // tries that really happened, not one ahead of it.
+                    None => link.next_attempt = Some(now + link.backoff.delay()),
                     Some(at) if at <= now => {
                         due = true;
                         link.next_attempt = None;
@@ -1603,6 +1657,11 @@ pub(crate) fn drain_events(cx: &mut gpui::App) {
 }
 
 fn reconnect_after_restart(origin: &str, cx: &mut gpui::App) {
+    // The mismatch note this machine's old daemon earned is answered now —
+    // the restart just put this build's server there. Left in the queue it
+    // outlives the fix, and the next successful connect raises it again as a
+    // second "update this server?" about a server that was already updated.
+    crate::daemon::install::forget_remote_mismatch(origin);
     let Some(host) = remote_connect::origin_host(origin) else {
         return;
     };
@@ -1686,7 +1745,32 @@ fn finish_attempt(
     match outcome {
         Ok((connected, sent)) => {
             let restarted = server_restarted(cx, host, &connected.host);
+            let rows = connected.rows.clone();
             remote_connect::HostLinks::insert(cx, connected.host, connected.home);
+            // Every successful attach carries the machine's own workspace
+            // listing, not just the switcher's explicit connect: a workspace
+            // another client created on this machine only becomes visible
+            // here if this path merges the listing too.
+            let listing: Vec<(WorkspaceId, String, u64)> = rows
+                .iter()
+                .map(|r| (r.id, r.name.clone(), r.last_active))
+                .collect();
+            WorkspaceStore::sync_remote(cx, target, &listing);
+            for (_, app) in crate::ui::windows::WindowRegistry::open_windows(cx) {
+                let Some(app) = app.upgrade() else {
+                    continue;
+                };
+                app.update(cx, |app, cx| {
+                    app.host_snapshots.insert(
+                        host,
+                        crate::ui::switcher::HostSnapshot {
+                            target: target.clone(),
+                            rows: rows.clone(),
+                        },
+                    );
+                    cx.notify();
+                });
+            }
             for (id, key) in workspaces_on(cx, host) {
                 let reclaimed = {
                     let links = cx.default_global::<RemoteLinks>();
@@ -1734,6 +1818,13 @@ fn finish_attempt(
                 } else {
                     LinkState::Reconnecting
                 };
+                if !parked {
+                    // The counter is the number of attempts that came back
+                    // wrong. It moves here, not when the pump schedules one:
+                    // a first try still in flight is attempt 1 on the strip,
+                    // not attempt 2. A parked look stays off the backoff.
+                    link.backoff.advance();
+                }
                 link.next_attempt = None;
                 link.last_error = Some(e.clone());
             });
@@ -2020,6 +2111,178 @@ mod tests {
                     .reclaiming
                     .contains_key(&id),
                 "nothing was taken over, so nothing needs the Replace path"
+            );
+        });
+    }
+
+    /// A refusal as the daemon writes it — what `finish_connect` receives when
+    /// the machine's server is the other side of a dialect bump.
+    fn a_dialect_refusal() -> String {
+        "build-box answered, but not as a tty7 server: control peer (build 26.7.7-nightly) \
+         speaks control v4, this build speaks v5"
+            .to_string()
+    }
+
+    /// A live `Connected` over a socketpair, served by a real control server in
+    /// a thread — what a connect that finally landed hands `finish_connect`.
+    #[cfg(unix)]
+    fn fake_connected(connection_key: &str) -> remote_connect::Connected {
+        use tty7_core::daemon::control::ControlHello;
+        use tty7_core::host::local::LocalHost;
+        use tty7_core::host::server::{Services, serve_with};
+
+        let (server, client) = std::os::unix::net::UnixStream::pair().unwrap();
+        std::thread::spawn(move || {
+            let _ = serve_with(server, LocalHost::new(), Services::none());
+        });
+        let hello = ControlHello::host_rpc("test-token", "test-client");
+        let host = RemoteHost::over_unix(client, connection_key, &hello)
+            .expect("the fake server answers the hello");
+        remote_connect::Connected {
+            host,
+            home: std::path::PathBuf::from("/tmp"),
+            rows: Vec::new(),
+        }
+    }
+
+    /// The regression behind "I clicked update and nothing happened": a create
+    /// whose connect was refused for the dialect used to die with the attempt,
+    /// so the update the refusal button ran had nothing left to finish and the
+    /// user had to create the workspace all over again.
+    #[cfg(unix)]
+    #[gpui::test]
+    fn a_create_refused_for_dialect_runs_once_the_machine_connects(cx: &mut gpui::TestAppContext) {
+        use gpui::VisualContext as _;
+
+        let (app, mut vcx) = crate::ui::app::test_window::harness(cx);
+        // Entering the created workspace walks the registry, so the window has
+        // to be in it — the same setup the create form's own test needs.
+        let handle = vcx.window_handle();
+        let weak = app.downgrade();
+        app.update(cx, |app, cx| {
+            crate::core::session::WorkspaceStore::install_for_test(
+                cx,
+                crate::core::session::WindowViews::default(),
+            );
+            crate::ui::windows::WindowRegistry::init(cx);
+            crate::ui::windows::WindowRegistry::register(cx, app.workspace, handle, weak);
+        });
+        let target = RemoteTarget::Alias {
+            alias: "tty7-test-refused-box".into(),
+        };
+        let choice = HostChoice {
+            target: target.clone(),
+            label: "refused-box".into(),
+            detail: String::new(),
+        };
+
+        app.update_in(&mut vcx, |app, window, cx| {
+            app.pending_create = Some(crate::ui::switcher::PendingCreate {
+                target: target.clone(),
+                name: Some("deploy".into()),
+            });
+            app.connect = Some(ConnectFlow::Connecting {
+                choice: choice.clone(),
+            });
+            app.finish_connect(Err(a_dialect_refusal()), window, cx);
+        });
+
+        // The server over there was updated and the machine finally connected —
+        // whether over `server_replaced`'s kick or the band's own retry, it
+        // ends in the same place.
+        app.update_in(&mut vcx, |app, window, cx| {
+            app.finish_connect(Ok(fake_connected("tty7-test-refused-box")), window, cx);
+        });
+
+        app.update(cx, |app, cx| {
+            let own = WorkspaceStore::remote_ref(cx, app.workspace)
+                .expect("the parked create ran and this window entered its workspace");
+            assert_eq!(own.target, target);
+            assert_eq!(
+                crate::ui::tree_sync::chosen_name_for(cx, app.workspace).as_deref(),
+                Some("deploy"),
+                "the name travels with the create it was typed for"
+            );
+        });
+    }
+
+    /// The moment the replacement lands the machine is connected at again
+    /// without waiting for the user — the parked create stays put for that
+    /// connect to spend, not for a click that will never come.
+    #[gpui::test]
+    fn a_server_replacement_connects_back_for_the_parked_create(cx: &mut gpui::TestAppContext) {
+        let (app, mut vcx) = crate::ui::app::test_window::harness(cx);
+        let target = RemoteTarget::Alias {
+            alias: "tty7-test-refused-box".into(),
+        };
+        let choice = HostChoice {
+            target: target.clone(),
+            label: "refused-box".into(),
+            detail: String::new(),
+        };
+
+        app.update_in(&mut vcx, |app, window, cx| {
+            app.pending_create = Some(crate::ui::switcher::PendingCreate {
+                target: target.clone(),
+                name: None,
+            });
+            app.connect = Some(ConnectFlow::Connecting {
+                choice: choice.clone(),
+            });
+            app.finish_connect(Err(a_dialect_refusal()), window, cx);
+        });
+
+        app.update(cx, |app, cx| {
+            app.server_replaced(&target, "refused-box", "tty7-test-unknown-origin", cx);
+            // The old refusal is still `Failed { target }` too, so the target
+            // alone proves nothing — what has to change is the failure itself:
+            // a fresh attempt ran and left its own outcome in its place.
+            match app.connect.as_ref() {
+                Some(ConnectFlow::Connecting { choice }) => assert_eq!(choice.target, target),
+                Some(ConnectFlow::Failed { choice, error }) => {
+                    assert_eq!(choice.target, target);
+                    assert!(
+                        !crate::daemon::control::is_dialect_refusal(error),
+                        "the refusal was never retried: {error}"
+                    );
+                }
+                None => panic!("the replacement kicks a connect at the machine"),
+            }
+            assert!(
+                app.parked_create.is_some(),
+                "the create keeps waiting for that connect to land"
+            );
+        });
+    }
+
+    /// The second half of the double-prompt: the note a mismatched daemon
+    /// earned used to outlive the very replacement that answered it, so the
+    /// next successful connect asked to update a server that was already
+    /// updated — and confirming killed the fresh daemon all over again.
+    #[gpui::test]
+    fn a_restart_retires_the_mismatch_note_it_answers(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            let origin = "tty7-test-stale-origin";
+            crate::daemon::install::record_remote_mismatches(vec![
+                crate::daemon::install::MismatchedRemoteDaemon {
+                    host: origin.into(),
+                    running_version: Some("0.8.0".into()),
+                    running_exe: None,
+                    wanted_version: "0.9.0".into(),
+                },
+            ]);
+
+            reconnect_after_restart(origin, cx);
+
+            let drained = crate::daemon::install::take_mismatched_remote_daemons();
+            let (ours, others): (Vec<_>, Vec<_>) =
+                drained.into_iter().partition(|m| m.host == origin);
+            // Notes about other machines are still owed; put back what the
+            // drain took.
+            crate::daemon::install::record_remote_mismatches(others);
+            assert!(
+                ours.is_empty(),
+                "the restart just answered this note; raising it again is the double prompt"
             );
         });
     }
@@ -2317,6 +2580,49 @@ mod tests {
         (target.host_id(), target)
     }
 
+    /// The strip's "attempt N" is the number of tries that actually came back
+    /// wrong. The pump scheduling a try is not one: a first connect still in
+    /// flight used to read "attempt 2" on a link that had never failed.
+    #[gpui::test]
+    fn scheduling_a_try_is_not_a_failed_attempt(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            crate::core::config::pin_test_config_dir();
+            cx.set_global(crate::core::config::Config::default());
+            crate::ui::windows::WindowRegistry::init(cx);
+
+            let (host, target) = resolvable_machine("build-box");
+            let mut entry = crate::core::session::WindowView::on_remote(RemoteRef::new(
+                target.clone(),
+                WorkspaceId::new(),
+            ));
+            entry.open = true;
+            WorkspaceStore::install_for_test(
+                cx,
+                crate::core::session::WindowViews {
+                    views: vec![entry],
+                    active: None,
+                },
+            );
+
+            pump_tick(cx);
+            let attempt = |cx: &mut gpui::App| {
+                cx.default_global::<RemoteLinks>()
+                    .machines
+                    .get(&host)
+                    .expect("the machine is known")
+                    .backoff
+                    .attempt()
+            };
+            assert_eq!(attempt(cx), 0, "the first try is scheduled, not failed");
+
+            finish_attempt(cx, host, &target, Err("connection refused".into()));
+            assert_eq!(attempt(cx), 1, "a try that came back wrong is one");
+
+            pump_tick(cx);
+            assert_eq!(attempt(cx), 1, "rescheduling the next try adds nothing");
+        });
+    }
+
     /// A parked machine with one open workspace on it, wound forward to the
     /// moment after the refusal.
     fn parked_on_a_refusal(cx: &mut gpui::App) -> (HostId, RemoteTarget, WorkspaceId) {
@@ -2411,7 +2717,12 @@ mod tests {
                 "four ticks later it is still parked, not back on the backoff"
             );
             assert!(!link.attempting);
-            assert_eq!(link.backoff.attempt(), 0, "no attempt was ever scheduled");
+            assert_eq!(
+                link.backoff.attempt(),
+                1,
+                "the counter still reads the one ordinary failure before the \
+                 park; neither the refusal nor the parked ticks moved it"
+            );
             let wait = link
                 .next_attempt
                 .expect("a parked link still looks again eventually")
