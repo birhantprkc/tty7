@@ -28,7 +28,13 @@ use super::protocol::{MAX_FRAME, read_frame, write_frame};
 /// end events, and `ReplyOk::Attached` and `FileMeta` went away. All of it
 /// shipped against a number that never moved, so every one of those servers
 /// still answers the hello and then drops the link on the first call.
-pub const CONTROL_VERSION: u32 = 6;
+///
+/// v7 changes no message at all. It is here so that the handling of a dialect
+/// refusal — the parked strip, its Update Server button, and the installer
+/// refusing to kill a server it has nothing to replace with — can be exercised
+/// against the v6 servers already deployed. A number is the only way to reach
+/// that path, and a mismatch nobody can reproduce is a mismatch nobody can fix.
+pub const CONTROL_VERSION: u32 = 7;
 
 const DIALECT_MARKER: &str = "speaks control v";
 
@@ -36,8 +42,16 @@ fn dialect_refusal(peer_build: &str, peer: u32, ours: u32) -> String {
     format!("control peer (build {peer_build}) {DIALECT_MARKER}{peer}, this build speaks v{ours}")
 }
 
+/// Whether this is a refusal over the control dialect — the whole shape of one,
+/// not just the marker.
+///
+/// Every reader of a `true` here goes on to restate the refusal with
+/// [`parse_dialect_refusal`], and one of them parks a link in a state only a
+/// person can leave. Two predicates for one question is how those two come
+/// apart: a message carrying the marker in some other shape would be parked on
+/// and then shown as the raw protocol wording it was supposed to replace.
 pub fn is_dialect_refusal(message: &str) -> bool {
-    message.contains(DIALECT_MARKER)
+    parse_dialect_refusal(message).is_some()
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

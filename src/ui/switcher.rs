@@ -1877,8 +1877,9 @@ impl Tty7App {
         // The band no longer sits under a machine header, so plain errors
         // carry the machine's name themselves; the dialect restatement
         // already names it.
-        let shown = dialect_complaint(error, &group.label)
+        let shown = remote_connect::dialect_complaint(error, &group.label)
             .unwrap_or_else(|| format!("{}: {error}", group.label));
+        let replace_action = crate::ui::remote_workspace::mismatch_action_key(error);
         let theme = cx.theme();
         v_flex()
             .gap(px(4.))
@@ -1921,14 +1922,21 @@ impl Tty7App {
                     )
                     .when(
                         crate::daemon::control::is_dialect_refusal(error)
-                            && replace.target.is_some(),
+                            // Same gate as the workspace strip's: a machine
+                            // whose server is not ours to install cannot be
+                            // helped by this button, and a click that can only
+                            // fail is worse than no button.
+                            && replace
+                                .target
+                                .as_ref()
+                                .is_some_and(|t| t.hosts_our_server()),
                         |row| {
                             row.child(
                                 Button::new(gpui::SharedString::from(format!(
                                     "switcher-replace:{}",
                                     group.key
                                 )))
-                                .label(t(L10nKey::RemoteMismatchReplaceServer))
+                                .label(t(replace_action))
                                 .ghost()
                                 .xsmall()
                                 .on_click(cx.listener(
@@ -1938,6 +1946,7 @@ impl Tty7App {
                                             this.confirm_replace_remote_server(
                                                 target,
                                                 replace.label.clone(),
+                                                replace_action,
                                                 window,
                                                 cx,
                                             );
@@ -3173,23 +3182,6 @@ fn host_menu(
     )
 }
 
-/// A handshake that failed on the control dialect reaches here as the protocol
-/// layer's own wording, which reads like the far end is not tty7 at all. It is —
-/// it is just a build the other side of a dialect bump — so say that instead, and
-/// say which side has to move. Anything else is shown as it came.
-fn dialect_complaint(error: &str, machine: &str) -> Option<String> {
-    let refusal = crate::daemon::control::parse_dialect_refusal(error)?;
-    let key = if refusal.peer < refusal.ours {
-        L10nKey::RemoteServerOutdated
-    } else {
-        L10nKey::RemoteServerTooNew
-    };
-    Some(t_fmt(
-        key,
-        &[("machine", machine), ("build", &refusal.peer_build)],
-    ))
-}
-
 fn rungs(cx: &App) -> crate::ui::presets::Surface {
     cx.global::<crate::ui::presets::Surfaces>().popover
 }
@@ -3635,39 +3627,6 @@ mod tests {
 
         view.title = String::new();
         assert!(tab_view_label(&view, 2, None).contains('3'));
-    }
-    fn refusal(peer: u32, ours: u32) -> String {
-        format!(
-            "java answered, but not as a tty7 server: control peer (build 26.7.7-nightly) \
-             speaks control v{peer}, this build speaks v{ours}"
-        )
-    }
-
-    #[test]
-    fn a_dialect_refusal_is_restated_as_which_side_is_behind() {
-        let behind = dialect_complaint(&refusal(4, 5), "java").expect("a refusal is recognised");
-        assert!(
-            behind.contains("java") && behind.contains("26.7.7-nightly"),
-            "{behind}"
-        );
-        assert!(
-            !behind.contains("control v"),
-            "the dialect numbers mean nothing to the reader: {behind}"
-        );
-
-        let ahead = dialect_complaint(&refusal(6, 5), "java").expect("a refusal is recognised");
-        assert_ne!(
-            ahead, behind,
-            "a server newer than this client needs the opposite advice"
-        );
-    }
-
-    #[test]
-    fn every_other_failure_is_shown_as_it_came() {
-        assert_eq!(
-            dialect_complaint("Connection refused (os error 61)", "java"),
-            None
-        );
     }
 }
 
