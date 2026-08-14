@@ -13,7 +13,10 @@ mod windows;
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(3);
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
-const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
+// A version echo takes microseconds on a healthy daemon; a second is already
+// generous. The old two-second budget only made an unresponsive daemon's
+// stall that much longer before the bounded reap below takes over.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(1);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(6);
 /// How long to wait for a refusal before assuming a handoff went through.
 ///
@@ -140,70 +143,147 @@ fn is_reapable_daemon_name(name: &str) -> bool {
             .any(|stem| exe_names_equal(stem, name))
 }
 
+/// Whether the recorded daemon process is gone — the cheap, certain signal
+/// that `daemon.port` and `control.port` are stale. One process-liveness
+/// query, no TCP: a dead recorded daemon means a connect to the endpoint
+/// would only pay the OS's refusal delay (seconds on some machines) for
+/// information the pidfile already has.
+///
+/// The GUI's GuiOpen handoff probe relies on the same signal: the probe
+/// connects to the daemon's control listener, so a dead recorded daemon
+/// guarantees no GUI is registered there — running the probe would only wait
+/// out the refusal delay on the stale `control.port` that `ensure_running`
+/// clears later. The probe skips itself instead.
+pub fn recorded_daemon_is_dead() -> bool {
+    recorded_daemon_is_dead_with(pidfile::read(), daemon_process_alive)
+}
+
+/// The rule alone, so it can be tested without a pidfile on disk — pinning a
+/// config directory would mean an env var, and that is process-global state
+/// every other test running beside this one would inherit.
+///
+/// Note what a missing pidfile answers: **not dead**, because nothing here
+/// knows otherwise. Callers must not read that as "alive" — a refused connect
+/// is still the authority, and `ensure_running` keeps its own stale branch for
+/// exactly that.
+fn recorded_daemon_is_dead_with(recorded: Option<u32>, alive: impl Fn(u32) -> bool) -> bool {
+    let Some(pid) = recorded else {
+        return false;
+    };
+    pid > 4 && pid != std::process::id() && !alive(pid)
+}
+
+#[cfg(windows)]
+fn daemon_process_alive(pid: u32) -> bool {
+    !crate::daemon::winproc::wait_for_exit(pid, Duration::ZERO)
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn daemon_process_alive(pid: u32) -> bool {
+    process_alive(pid as libc::pid_t)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+fn daemon_process_alive(_pid: u32) -> bool {
+    // No cheap liveness query on this platform: assume alive, which keeps
+    // the TCP probe as the authority.
+    true
+}
+
 pub fn ensure_running() -> anyhow::Result<()> {
-    if let Ok(mut stream) = transport::connect() {
-        match query_daemon_version(&mut stream) {
-            VersionProbe::Speaks(v) if v.protocol == PROTOCOL_VERSION => {
-                if !v.build.is_empty() && v.build != env!("CARGO_PKG_VERSION") {
-                    log::info!(
-                        "daemon build {} differs from this build {}; keeping it so its panes \
-                         survive the upgrade — Settings offers the restart",
-                        v.build,
-                        env!("CARGO_PKG_VERSION")
-                    );
+    // A dead recorded daemon is the cheap, certain signal that the endpoint
+    // files are stale: skip the connect entirely and let the cleanup below
+    // clear them before the fresh daemon is spawned — the spawn poll would
+    // otherwise keep paying the OS's refusal delay on the dead port.
+    let mut stale = recorded_daemon_is_dead();
+    if !stale {
+        if let Ok(mut stream) = transport::connect() {
+            match query_daemon_version(&mut stream) {
+                VersionProbe::Speaks(v) if v.protocol == PROTOCOL_VERSION => {
+                    if !v.build.is_empty() && v.build != env!("CARGO_PKG_VERSION") {
+                        log::info!(
+                            "daemon build {} differs from this build {}; keeping it so its panes \
+                             survive the upgrade — Settings offers the restart",
+                            v.build,
+                            env!("CARGO_PKG_VERSION")
+                        );
+                    }
+                    note_local_daemon(Some(v));
+                    // Agreeing here is only half the handshake: the control dialect
+                    // is versioned apart and moves on its own, so a daemon from
+                    // before a dialect bump passes this check and then refuses
+                    // every machine-tree call. Ask the other socket before calling
+                    // the daemon ours, or the window opens with no tabs and nothing
+                    // to explain why.
+                    if let Some(refusal) = control_dialect_refusal() {
+                        log::warn!(
+                            "daemon (build {}) speaks control v{}, this build speaks v{}; \
+                             its machine tree is out of reach until it restarts",
+                            refusal.peer_build,
+                            refusal.peer,
+                            refusal.ours
+                        );
+                        note_daemon_mismatch(DaemonMismatch::Dialect(refusal));
+                    }
+                    return Ok(());
                 }
-                note_local_daemon(Some(v));
-                // Agreeing here is only half the handshake: the control dialect
-                // is versioned apart and moves on its own, so a daemon from
-                // before a dialect bump passes this check and then refuses
-                // every machine-tree call. Ask the other socket before calling
-                // the daemon ours, or the window opens with no tabs and nothing
-                // to explain why.
-                if let Some(refusal) = control_dialect_refusal() {
+                VersionProbe::Speaks(v) => {
                     log::warn!(
-                        "daemon (build {}) speaks control v{}, this build speaks v{}; \
-                         its machine tree is out of reach until it restarts",
-                        refusal.peer_build,
-                        refusal.peer,
-                        refusal.ours
-                    );
-                    note_daemon_mismatch(DaemonMismatch::Dialect(refusal));
-                }
-                return Ok(());
-            }
-            VersionProbe::Speaks(v) => {
-                log::warn!(
-                    "daemon (build {}) speaks protocol {}, this build needs {}; \
+                        "daemon (build {}) speaks protocol {}, this build needs {}; \
                      keeping it and deferring to the user",
-                    v.build,
-                    v.protocol,
-                    PROTOCOL_VERSION
-                );
-                note_local_daemon(Some(v.clone()));
-                note_daemon_mismatch(DaemonMismatch::Protocol(Some(v)));
-                return Ok(());
+                        v.build,
+                        v.protocol,
+                        PROTOCOL_VERSION
+                    );
+                    note_local_daemon(Some(v.clone()));
+                    note_daemon_mismatch(DaemonMismatch::Protocol(Some(v)));
+                    return Ok(());
+                }
+                VersionProbe::Legacy => {
+                    log::warn!(
+                        "daemon predates protocol versioning; keeping it and deferring to the user"
+                    );
+                    note_local_daemon(None);
+                    note_daemon_mismatch(DaemonMismatch::Protocol(None));
+                    return Ok(());
+                }
+                VersionProbe::Unresponsive => {
+                    log::info!("daemon did not answer the version handshake; restarting it");
+                    note_local_daemon(None);
+                    drop(stream);
+                    // A graceful stop is wasted on a daemon that will not answer:
+                    // `stop` polls the still-connectable endpoint for its whole
+                    // SHUTDOWN_TIMEOUT before giving up. Reap the recorded process
+                    // instead — bounded on every platform — and clear the stale
+                    // endpoint below, exactly like a refused connect.
+                    stale = true;
+                }
             }
-            VersionProbe::Legacy => {
-                log::warn!(
-                    "daemon predates protocol versioning; keeping it and deferring to the user"
-                );
-                note_local_daemon(None);
-                note_daemon_mismatch(DaemonMismatch::Protocol(None));
-                return Ok(());
-            }
-            VersionProbe::Unresponsive => {
-                log::info!("daemon did not answer the version handshake; restarting it");
-                note_local_daemon(None);
-                drop(stream);
-                stop();
-            }
+        } else {
+            // A refused connect is the other stale signal, and it is the only
+            // one left when the pidfile cannot answer: it is missing (the
+            // daemon died between `bind` and `write_current`, or never managed
+            // to write it), or it records a pid the OS has since handed to an
+            // unrelated process. `recorded_daemon_is_dead` says "not dead" to
+            // both, so without this the endpoint file survives and the spawn
+            // poll below pays the refusal delay on it — the very cost this
+            // function was rewritten to avoid.
+            stale = true;
         }
-    } else {
+    }
+
+    if stale {
         reap_recorded_daemon();
 
         if transport::endpoint_exists() {
             transport::remove_stale_endpoint();
         }
+        // The daemon's control listener probes control.port for a live
+        // predecessor before binding; a stale file would cost it the same
+        // refused-connect delay the probe above just skipped. The recorded
+        // daemon is known dead here, so the file cannot be live.
+        #[cfg(windows)]
+        crate::host::server::remove_control_endpoint();
     }
 
     // While an installer is replacing the installation, spawning a daemon
@@ -1051,6 +1131,44 @@ mod tests {
     use crate::daemon::control::CONTROL_VERSION;
     use std::io::ErrorKind;
     use std::os::unix::net::UnixStream;
+
+    #[test]
+    fn a_missing_pidfile_is_not_a_dead_daemon() {
+        let dead = |_| false;
+        let alive = |_| true;
+
+        // The case the caller has to keep handling itself: no pidfile is no
+        // evidence. The daemon may have died between `transport::bind` (which
+        // writes daemon.port) and `pidfile::write_current`, or never managed
+        // the write at all — a refused connect is then the only signal that
+        // the endpoint file is stale, and skipping the cleanup on it leaves
+        // the spawn poll paying the refusal delay this whole path exists to
+        // avoid.
+        assert!(!recorded_daemon_is_dead_with(None, dead));
+
+        // A recorded pid the OS has handed to something else is likewise not
+        // evidence of death — it is alive, just not ours. `reap_recorded_daemon`
+        // is what checks the executable before killing anything.
+        assert!(!recorded_daemon_is_dead_with(Some(4242), alive));
+
+        // Our own pid: an in-process daemon, so certainly not dead.
+        assert!(!recorded_daemon_is_dead_with(
+            Some(std::process::id()),
+            dead
+        ));
+
+        // Reserved low pids are never a daemon of ours; refuse to call them
+        // dead so nothing downstream reaps them.
+        for reserved in [0, 1, 4] {
+            assert!(
+                !recorded_daemon_is_dead_with(Some(reserved), dead),
+                "pid {reserved} must never be treated as our dead daemon"
+            );
+        }
+
+        // The one case that is evidence: a plausible pid that is gone.
+        assert!(recorded_daemon_is_dead_with(Some(4242), dead));
+    }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]

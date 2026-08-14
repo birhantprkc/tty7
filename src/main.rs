@@ -272,38 +272,56 @@ fn explorer_menu_action_from(args: &[std::ffi::OsString]) -> Option<bool> {
     })
 }
 
-/// Offers an explicit launch path to an already running local GUI.
+/// Offers an explicit launch request to an already running local GUI.
 ///
 /// The dispatcher is injected so the startup decision can be tested without
 /// opening a real daemon connection. Only an explicit `Bool(true)` means the
-/// path reached a GUI; every other response keeps the current app alive so it
-/// can perform the normal first-window startup.
+/// request reached a GUI; every other response keeps the current app alive so
+/// it can perform the normal first-window startup. A pathless request asks the
+/// GUI to surface itself — restore its most recent workspace, or activate the
+/// window it already has — which is what lets a second launch hand the tray
+/// its window back instead of opening a second process.
+///
+/// `daemon_gone` reports whether the recorded daemon process is known dead.
+/// The probe connects to that daemon's control listener, so a dead daemon
+/// guarantees the request cannot reach a GUI — and the connect would only pay
+/// the OS's refusal delay on the stale `control.port` that `ensure_running`
+/// clears later. The probe is skipped instead of run.
 fn forward_open_path_with(
     open_path: Option<&std::path::Path>,
-    dispatch: impl FnOnce(String) -> std::io::Result<tty7_core::daemon::control::ReplyOk>,
+    daemon_gone: impl FnOnce() -> bool,
+    dispatch: impl FnOnce(Option<String>) -> std::io::Result<tty7_core::daemon::control::ReplyOk>,
 ) -> bool {
     use tty7_core::daemon::control::ReplyOk;
 
-    let Some(path) = open_path else {
+    if daemon_gone() {
         return false;
-    };
-    let path = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        match std::env::current_dir() {
-            Ok(current_dir) => current_dir.join(path),
-            Err(error) => {
-                log::debug!("could not resolve the relative GUI open path: {error}");
-                return false;
-            }
-        }
-    };
+    }
 
-    let Some(wire_path) = path.to_str().map(str::to_owned) else {
-        // Keep the native PathBuf in this process. Returning false continues
-        // normal startup, which opens the path without crossing the protocol.
-        log::debug!("the explicit GUI open path is not valid UTF-8; opening it locally");
-        return false;
+    let wire_path = match open_path {
+        None => None,
+        Some(path) => {
+            let path = if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                match std::env::current_dir() {
+                    Ok(current_dir) => current_dir.join(path),
+                    Err(error) => {
+                        log::debug!("could not resolve the relative GUI open path: {error}");
+                        return false;
+                    }
+                }
+            };
+
+            // Keep the native PathBuf in this process. Returning false
+            // continues normal startup, which opens the path without crossing
+            // the protocol.
+            let Some(wire_path) = path.to_str().map(str::to_owned) else {
+                log::debug!("the explicit GUI open path is not valid UTF-8; opening it locally");
+                return false;
+            };
+            Some(wire_path)
+        }
     };
 
     match dispatch(wire_path) {
@@ -329,19 +347,23 @@ fn forward_open_path(open_path: Option<&std::path::Path>) -> bool {
     use tty7_core::client::ControlClient;
     use tty7_core::daemon::control::{ControlHello, ControlRequest};
 
-    forward_open_path_with(open_path, |path| {
-        let hello = ControlHello::host_rpc(
-            format!("tty7-app-open-{}", std::process::id()),
-            "this computer",
-        );
-        let client = ControlClient::connect(&hello)?;
-        let reply = client.request(ControlRequest::GuiOpen {
-            path: Some(path),
-            workspace: None,
-        });
-        client.close();
-        reply
-    })
+    forward_open_path_with(
+        open_path,
+        crate::daemon::spawn::recorded_daemon_is_dead,
+        |path| {
+            let hello = ControlHello::host_rpc(
+                format!("tty7-app-open-{}", std::process::id()),
+                "this computer",
+            );
+            let client = ControlClient::connect(&hello)?;
+            let reply = client.request(ControlRequest::GuiOpen {
+                path,
+                workspace: None,
+            });
+            client.close();
+            reply
+        },
+    )
 }
 
 #[cfg(unix)]
@@ -534,12 +556,27 @@ fn main() {
     } else {
         crate::daemon::spawn::restart()
     };
+    // A pathless launch that found a GUI already registered hands the request
+    // to it — the GUI may be sitting in the tray with no window — and exits.
+    // The forward above cannot do this: it runs before the daemon exists, and
+    // routing through a daemon that is not up yet would fail on every cold
+    // start. Here the daemon is known to be running, so the probe is cheap and
+    // a `Bool(true)` means a GUI actually received the request.
+    if open_path.is_none() && daemon_result.is_ok() && forward_open_path(None) {
+        return;
+    }
     if let Err(e) = daemon_result {
         log::error!("failed to ensure daemon is running: {e}");
     }
 
     gpui_platform::application()
         .with_assets(Assets)
+        // The window-close path decides whether this process survives: with
+        // the tray icon on, closing the last window retires to the tray, and
+        // without it the close handler quits explicitly. The platform default
+        // would quit on the last window unconditionally, which is exactly the
+        // orphaned-daemon trap the tray is meant to prevent.
+        .with_quit_mode(QuitMode::Explicit)
         .run(move |cx| {
             gpui_component::init(cx);
             register_bundled_fonts(cx);
@@ -838,34 +875,94 @@ mod argument_tests {
     }
 
     #[test]
-    fn no_open_path_never_attempts_early_dispatch() {
-        let delivered = forward_open_path_with(None, |_| {
-            panic!("the dispatcher must not run without an explicit path")
-        });
+    fn a_pathless_forward_asks_the_gui_to_surface_and_exits_only_on_bool_true() {
+        let delivered = forward_open_path_with(
+            None,
+            || false,
+            |actual| {
+                assert_eq!(actual, None, "a pathless request carries no wire path");
+                Ok(ReplyOk::Bool(true))
+            },
+        );
+        assert!(delivered, "a GUI accepted the surface request");
 
-        assert!(!delivered);
+        assert!(!forward_open_path_with(
+            None,
+            || false,
+            |_| Ok(ReplyOk::Bool(false))
+        ));
+        assert!(!forward_open_path_with(
+            None,
+            || false,
+            |_| Ok(ReplyOk::Unit)
+        ));
+        assert!(!forward_open_path_with(
+            None,
+            || false,
+            |_| {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::ConnectionRefused,
+                    "daemon is not running",
+                ))
+            }
+        ));
+    }
+
+    #[test]
+    fn early_dispatch_is_skipped_when_the_recorded_daemon_is_dead() {
+        // A dead recorded daemon cannot be routing for a registered GUI, so the
+        // probe must not run — the connect would only wait out the OS's refusal
+        // delay on the stale control port before `ensure_running` clears it.
+        assert!(!forward_open_path_with(
+            None,
+            || true,
+            |_| -> std::io::Result<ReplyOk> {
+                panic!("the probe must not dispatch when the daemon is dead")
+            },
+        ));
+        assert!(!forward_open_path_with(
+            Some(std::path::Path::new("/work")),
+            || true,
+            |_| -> std::io::Result<ReplyOk> {
+                panic!("the probe must not dispatch when the daemon is dead")
+            },
+        ));
     }
 
     #[test]
     fn early_dispatch_exits_only_after_a_gui_accepts_the_path() {
         let path = std::env::current_dir().unwrap().join("folder with spaces");
         let expected = path.to_str().unwrap().to_owned();
-        let delivered = forward_open_path_with(Some(&path), |actual| {
-            assert_eq!(actual, expected);
-            Ok(ReplyOk::Bool(true))
-        });
+        let delivered = forward_open_path_with(
+            Some(&path),
+            || false,
+            |actual| {
+                assert_eq!(actual, Some(expected));
+                Ok(ReplyOk::Bool(true))
+            },
+        );
 
         assert!(delivered);
-        assert!(!forward_open_path_with(Some(&path), |_| Ok(ReplyOk::Bool(
-            false
-        ))));
-        assert!(!forward_open_path_with(Some(&path), |_| Ok(ReplyOk::Unit)));
-        assert!(!forward_open_path_with(Some(&path), |_| {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::ConnectionRefused,
-                "daemon is not running",
-            ))
-        }));
+        assert!(!forward_open_path_with(
+            Some(&path),
+            || false,
+            |_| Ok(ReplyOk::Bool(false))
+        ));
+        assert!(!forward_open_path_with(
+            Some(&path),
+            || false,
+            |_| Ok(ReplyOk::Unit)
+        ));
+        assert!(!forward_open_path_with(
+            Some(&path),
+            || false,
+            |_| {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::ConnectionRefused,
+                    "daemon is not running",
+                ))
+            }
+        ));
     }
 
     #[test]
@@ -878,10 +975,14 @@ mod argument_tests {
             .unwrap()
             .to_owned();
 
-        assert!(forward_open_path_with(Some(relative), |actual| {
-            assert_eq!(actual, expected);
-            Ok(ReplyOk::Bool(true))
-        }));
+        assert!(forward_open_path_with(
+            Some(relative),
+            || false,
+            |actual| {
+                assert_eq!(actual, Some(expected));
+                Ok(ReplyOk::Bool(true))
+            }
+        ));
     }
 
     #[cfg(unix)]
@@ -891,9 +992,11 @@ mod argument_tests {
         use std::os::unix::ffi::OsStringExt as _;
 
         let path = std::env::temp_dir().join(OsString::from_vec(b"tty7-\xff".to_vec()));
-        let delivered = forward_open_path_with(Some(&path), |_| {
-            panic!("a non-UTF-8 path must never be changed and sent over the string protocol")
-        });
+        let delivered = forward_open_path_with(
+            Some(&path),
+            || false,
+            |_| panic!("a non-UTF-8 path must never be changed and sent over the string protocol"),
+        );
 
         assert!(!delivered);
     }
