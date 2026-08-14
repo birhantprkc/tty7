@@ -289,21 +289,26 @@ impl Tty7App {
         snap: Option<Arc<DiffSnapshot>>,
         cx: &mut Context<Self>,
     ) {
-        // A diff read is a fresher answer to the question the sidebar's
-        // +N −N asks, and it is the one the reader is looking at. Hand the
-        // numbers back before anything renders, or the row can disagree with
-        // the overlay it just opened.
+        // A diff read is a fresher answer to the question the sidebar's branch
+        // and +N −N ask, and it is the one the reader is looking at. Hand the
+        // branch and the numbers back before anything renders, or the row can
+        // disagree with the overlay it just opened — and `maybe_refresh` reads
+        // that disagreement as a reason to probe again.
         //
         // A read that failed is not an answer at all: its totals are whatever
         // got parsed before git gave up, usually zero. Publishing those wipes
         // the counts the sidebar already had right — the overlay says so in
         // words a few lines below, and the row would silently disagree.
         let mut landed = if let Some(snap) = snap.as_ref().filter(|s| !s.read_failed) {
-            let (added, removed) = snap.totals();
+            // Only a HEAD snapshot counts what the sidebar counts. A worktree
+            // or staged patch is a smaller answer to a different question, and
+            // a commit or a range is not about the working tree at all.
+            let counts = matches!(snap.source, DiffSource::Head).then(|| snap.totals());
             let root = snap.root.clone();
+            let branch = snap.branch.clone();
             cx.default_global::<crate::terminal::git_status::GitStatusCache>();
             cx.update_global::<crate::terminal::git_status::GitStatusCache, _>(|cache, _| {
-                cache.note_counts(host, &root, added, removed)
+                cache.note_diff_read(host, &root, &branch, counts)
             })
         } else {
             false
@@ -1200,9 +1205,17 @@ impl Tty7App {
                     .text_color(cx.theme().muted_foreground)
                     .child(t_plural(L10nKey::DiffUntrackedHeader, total, &[])),
             );
-        for path in untracked {
+        for (i, path) in untracked.iter().enumerate() {
+            // An untracked file has no patch in the snapshot, so it cannot be
+            // expanded in place the way the cards above it are — its contents
+            // are read one file at a time and shown on their own. The row
+            // asks for that read, which until now only the Source Control
+            // panel could: in the overlay these rows were the only files in a
+            // list of files that did nothing when clicked.
+            let for_focus = path.clone();
             section = section.child(
                 h_flex()
+                    .id(("diff-untracked", i))
                     .w_full()
                     .items_center()
                     .gap_2()
@@ -1210,6 +1223,26 @@ impl Tty7App {
                     .py_1()
                     .text_xs()
                     .font_family(self.font_family.clone())
+                    .cursor_pointer()
+                    .hover(|s| s.bg(cx.theme().secondary))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        let Some((host, cwd, source)) = this
+                            .tabs
+                            .get(this.active)
+                            .and_then(|t| t.diff_overlay.as_ref())
+                            .map(|o| (o.host_id, o.cwd.clone(), o.source.clone()))
+                        else {
+                            return;
+                        };
+                        this.open_diff_overlay(
+                            host,
+                            cwd,
+                            source,
+                            Some(for_focus.clone()),
+                            window,
+                            cx,
+                        );
+                    }))
                     .child(
                         div()
                             .flex_shrink_0()
@@ -1373,12 +1406,20 @@ fn untracked_focus<'a>(snap: &DiffSnapshot, focus: Option<&'a str>) -> Option<&'
     snap.untracked.iter().any(|u| u == path).then_some(path)
 }
 
+/// The file the overlay is focused on, for the header's way back to the list.
+///
+/// An untracked file is focused like any other but has no entry in `files` —
+/// its card is synthesized from the file's own bytes — so reading only `files`
+/// left the one view with no way out of it: the breadcrumb never drew, and the
+/// list was reachable again only by closing the overlay and reopening it.
 fn focused_name(overlay: &DiffOverlayState) -> Option<String> {
     let DiffLoad::Ready(snap) = &overlay.load else {
         return None;
     };
-    let idx = focused_file(snap, overlay)?;
-    Some(snap.files[idx].path.clone())
+    if let Some(idx) = focused_file(snap, overlay) {
+        return Some(snap.files[idx].path.clone());
+    }
+    untracked_focus(snap, overlay.focus.as_deref()).map(str::to_string)
 }
 
 fn empty_snapshot(snap: &DiffSnapshot) -> bool {
@@ -2294,6 +2335,48 @@ mod overlay_gpui_tests {
         assert_eq!(mode(&mut vcx), DiffViewMode::Split, "and back again");
     }
 
+    /// Focusing an untracked file has to leave a way back to the list.
+    ///
+    /// Its card is synthesized from the file's own bytes, so it has no entry in
+    /// `files` — and the header's breadcrumb read only `files`. The one view
+    /// that could be entered was the one view that could not be left except by
+    /// closing the overlay and opening it again.
+    #[gpui::test]
+    fn a_focused_untracked_file_still_has_a_way_back(cx: &mut TestAppContext) {
+        let (app, mut vcx, _pane) = test_window::harness_with_tabs(cx, 1);
+        let cwd = std::path::PathBuf::from("/no/such/tty7/repo");
+
+        app.update_in(&mut vcx, |app, window, cx| {
+            app.open_diff_overlay(
+                HostId::LOCAL,
+                cwd.clone(),
+                DiffSource::Worktree,
+                Some("scratch.txt".to_string()),
+                window,
+                cx,
+            );
+            let active = app.active;
+            let overlay = app.tabs[active].diff_overlay.as_mut().unwrap();
+            overlay.loading = false;
+            overlay.load = DiffLoad::Ready(Arc::new(DiffSnapshot {
+                source: DiffSource::Worktree,
+                branch: "main".into(),
+                untracked: vec!["scratch.txt".to_string()],
+                untracked_total: 1,
+                ..Default::default()
+            }));
+        });
+
+        app.update_in(&mut vcx, |app, _, _| {
+            let overlay = app.tabs[app.active].diff_overlay.as_ref().unwrap();
+            assert_eq!(
+                focused_name(overlay).as_deref(),
+                Some("scratch.txt"),
+                "the breadcrumb is the way back"
+            );
+        });
+    }
+
     /// The same source and the same focus still toggles the overlay shut.
     #[gpui::test]
     fn the_same_source_twice_still_closes(cx: &mut TestAppContext) {
@@ -2315,5 +2398,130 @@ mod overlay_gpui_tests {
         app.update_in(&mut vcx, |app, _, _| {
             assert!(app.tabs[app.active].diff_overlay.is_none());
         });
+    }
+}
+
+/// An overlay that has read its patch has to stop reading it.
+///
+/// `maybe_refresh_diff_overlay` calls a `Head` overlay stale when the cached
+/// git status disagrees with the snapshot on screen, and every landed probe
+/// wakes that check by touching the status cache. So a disagreement the probe
+/// cannot settle is not a stale badge — it is a loop: read the diff, publish
+/// it, wake the watchers, find the same disagreement, read it again. Two `git`
+/// processes a lap, `refreshing…` pinned to the header, and a window that
+/// costs 7% of a core sitting still.
+///
+/// The way in is ordinary: switch branches anywhere outside tty7 — another
+/// terminal, an editor, a worktree command — and the cached branch is a branch
+/// the repository has left. That is what the stale entry below stands for.
+///
+/// Unix-gated like every other window harness in this tree: `harness_with_tabs`
+/// hands back a `std::os::unix::net::UnixStream` for the pane.
+#[cfg(all(test, unix))]
+mod render_idle_gpui_tests {
+    use super::*;
+    use crate::terminal::git_status::{GitStatusCache, RepoSnapshot};
+    use crate::ui::app::{render_probe, test_window};
+    use crate::ui::host_ops::HostId;
+    use gpui::TestAppContext;
+
+    const BUDGET: u64 = 200;
+
+    fn git(root: &Path, args: &[&str]) {
+        let out = std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .expect("git runs");
+        assert!(out.status.success(), "git {args:?} failed");
+    }
+
+    #[gpui::test]
+    fn an_overlay_over_a_stale_branch_reaches_render_idle(cx: &mut TestAppContext) {
+        let root = std::env::temp_dir().join(format!("tty7-diff-idle-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let root = std::fs::canonicalize(&root).unwrap();
+        git(&root, &["init", "--quiet"]);
+        std::fs::write(root.join("a.rs"), "fn main() {}\n").unwrap();
+        git(&root, &["add", "a.rs"]);
+        git(
+            &root,
+            &[
+                "-c",
+                "user.email=t@x",
+                "-c",
+                "user.name=t",
+                "commit",
+                "-qm",
+                "one",
+            ],
+        );
+        // Something for the overlay to actually show, so it settles on a
+        // snapshot rather than on the empty state.
+        std::fs::write(root.join("a.rs"), "fn main() { /* edited */ }\n").unwrap();
+
+        let (app, mut vcx, _pane) = test_window::harness_with_tabs(cx, 1);
+
+        // The cache as a branch switch outside tty7 leaves it: a branch this
+        // repository is no longer on, and counts from before the switch.
+        let stale = root.clone();
+        app.update_in(&mut vcx, |_, _, cx| {
+            cx.default_global::<GitStatusCache>();
+            cx.update_global::<GitStatusCache, _>(|cache, _| {
+                cache.finish_probe(
+                    HostId::LOCAL,
+                    &stale,
+                    Some(RepoSnapshot {
+                        root: stale.clone(),
+                        home: stale.clone(),
+                        branch: "a-branch-this-repo-has-left".into(),
+                        counts: Some((99, 99)),
+                    }),
+                );
+            });
+        });
+
+        let open = root.clone();
+        app.update_in(&mut vcx, |app, window, cx| {
+            app.open_diff_overlay(HostId::LOCAL, open, DiffSource::Head, None, window, cx);
+        });
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            vcx.background_executor.run_until_parked();
+            let ready = app.update_in(&mut vcx, |app, _, _| {
+                app.tabs[app.active]
+                    .diff_overlay
+                    .as_ref()
+                    .is_some_and(|o| matches!(o.load, DiffLoad::Ready(_)) && !o.loading)
+            });
+            if ready {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the overlay never landed a snapshot"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+
+        test_window::quiesce(&mut vcx, Some(&root));
+        render_probe::arm(BUDGET);
+        vcx.background_executor.run_until_parked();
+        vcx.executor()
+            .advance_clock(std::time::Duration::from_secs(3));
+        vcx.background_executor.run_until_parked();
+        render_probe::arm(BUDGET);
+        vcx.executor()
+            .advance_clock(std::time::Duration::from_secs(9));
+        vcx.background_executor.run_until_parked();
+
+        assert_eq!(
+            render_probe::draws(),
+            0,
+            "a settled overlay must stop re-reading its own diff"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
