@@ -6874,6 +6874,7 @@ mod tests {
                     .unwrap(),
                 )
             }),
+            resize_echo: false,
         }
     }
 
@@ -8027,6 +8028,7 @@ mod tests {
             workspace: WorkspaceId::new(),
             target: target.clone(),
             spec: None,
+            resize_echo: false,
         };
 
         let remote = ws.target.host_id();
@@ -8042,6 +8044,7 @@ mod tests {
             workspace: WorkspaceId::new(),
             target,
             spec: None,
+            resize_echo: false,
         };
         assert_eq!(sibling.target.host_id(), remote);
     }
@@ -10808,6 +10811,7 @@ mod gpui_tests {
                 )
                 .unwrap(),
             )),
+            resize_echo: false,
         }));
         id
     }
