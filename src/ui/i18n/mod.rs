@@ -478,6 +478,7 @@ l10n_keys! {
     SettingsTop,
     SettingsLeft,
     SettingsByRepo,
+    SettingsByRepoOrFolder,
     SettingsFlat,
     SettingsPreset,
     SettingsPresetDesc,
