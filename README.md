@@ -6,18 +6,14 @@
 
 **A terminal workbench: persistent sessions, remote work, agents.**
 
-<sub>Pure Rust · GPU rendering on Zed's gpui · VT core from Alacritty</sub>
+<sub>macOS · Windows · Linux · Pure Rust · GPU rendering on Zed's gpui · VT core from Alacritty</sub>
 
 <br />
 
 [![CI](https://github.com/l0ng-ai/tty7/actions/workflows/ci.yml/badge.svg)](https://github.com/l0ng-ai/tty7/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/github/v/tag/l0ng-ai/tty7?label=version&color=3FDD8C)](https://github.com/l0ng-ai/tty7/releases)
+[![Version](https://img.shields.io/github/v/release/l0ng-ai/tty7?label=version&color=3FDD8C)](https://github.com/l0ng-ai/tty7/releases)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-join%20chat-5865F2?logo=discord&logoColor=white)](https://discord.gg/s3dethqz2V)
-
-[![macOS](https://img.shields.io/badge/macOS-2B2B2B?logo=apple&logoColor=white)](https://github.com/l0ng-ai/tty7/releases)
-[![Windows](https://img.shields.io/badge/Windows-2B2B2B?logo=data:image%2Fsvg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iIzQxQTVFRSI%2BPHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjExIiBoZWlnaHQ9IjExIiByeD0iMS4yIi8%2BPHJlY3QgeD0iMTMiIHk9IjAiIHdpZHRoPSIxMSIgaGVpZ2h0PSIxMSIgcng9IjEuMiIvPjxyZWN0IHg9IjAiIHk9IjEzIiB3aWR0aD0iMTEiIGhlaWdodD0iMTEiIHJ4PSIxLjIiLz48cmVjdCB4PSIxMyIgeT0iMTMiIHdpZHRoPSIxMSIgaGVpZ2h0PSIxMSIgcng9IjEuMiIvPjwvc3ZnPg%3D%3D)](https://github.com/l0ng-ai/tty7/releases)
-[![Linux](https://img.shields.io/badge/Linux-2B2B2B?logo=linux&logoColor=FCC624)](https://github.com/l0ng-ai/tty7/releases)
 
 <sub>English · [简体中文](README.zh-CN.md)</sub>
 
