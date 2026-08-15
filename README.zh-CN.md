@@ -12,9 +12,12 @@
 
 [![CI](https://github.com/l0ng-ai/tty7/actions/workflows/ci.yml/badge.svg)](https://github.com/l0ng-ai/tty7/actions/workflows/ci.yml)
 [![Version](https://img.shields.io/github/v/tag/l0ng-ai/tty7?label=version&color=3FDD8C)](https://github.com/l0ng-ai/tty7/releases)
-[![Platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-555)](https://github.com/l0ng-ai/tty7/releases)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-%E5%8A%A0%E5%85%A5%E7%BE%A4%E7%BB%84-5865F2?logo=discord&logoColor=white)](https://discord.gg/s3dethqz2V)
+
+[![macOS](https://img.shields.io/badge/macOS-2B2B2B?logo=apple&logoColor=white)](https://github.com/l0ng-ai/tty7/releases)
+[![Windows](https://img.shields.io/badge/Windows-2B2B2B?logo=windows&logoColor=41A5EE)](https://github.com/l0ng-ai/tty7/releases)
+[![Linux](https://img.shields.io/badge/Linux-2B2B2B?logo=linux&logoColor=FCC624)](https://github.com/l0ng-ai/tty7/releases)
 
 <sub>[English](README.md) · 简体中文</sub>
 
