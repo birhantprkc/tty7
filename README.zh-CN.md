@@ -16,7 +16,7 @@
 [![Discord](https://img.shields.io/badge/Discord-%E5%8A%A0%E5%85%A5%E7%BE%A4%E7%BB%84-5865F2?logo=discord&logoColor=white)](https://discord.gg/s3dethqz2V)
 
 [![macOS](https://img.shields.io/badge/macOS-2B2B2B?logo=apple&logoColor=white)](https://github.com/l0ng-ai/tty7/releases)
-[![Windows](https://img.shields.io/badge/Windows-2B2B2B?logo=windows&logoColor=41A5EE)](https://github.com/l0ng-ai/tty7/releases)
+[![Windows](https://img.shields.io/badge/Windows-2B2B2B?logo=data:image%2Fsvg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iIzQxQTVFRSI%2BPHBhdGggZD0iTTAgMy40NDkgOS43NSAyLjF2OS40NTFIMG0xMC45NDktOS42MDJMMjQgMHYxMS40SDEwLjk0OU0wIDEyLjZoOS43NXY5LjQ1MUwwIDIwLjY5OU0xMC45NDkgMTIuNkgyNFYyNGwtMTIuOS0xLjgwMSIvPjwvc3ZnPg%3D%3D)](https://github.com/l0ng-ai/tty7/releases)
 [![Linux](https://img.shields.io/badge/Linux-2B2B2B?logo=linux&logoColor=FCC624)](https://github.com/l0ng-ai/tty7/releases)
 
 <sub>[English](README.md) · 简体中文</sub>
