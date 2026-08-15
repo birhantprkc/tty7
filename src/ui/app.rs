@@ -6474,9 +6474,6 @@ impl Render for Tty7App {
             )
             .child(body)
             .when_some(self.pane_landing(window, cx), |this, el| this.child(el))
-            .when_some(self.render_ssh_prompt_overlay(window, cx), |this, el| {
-                this.child(el)
-            })
             .when_some(ssh_status, |this, el| this.child(el))
             .when_some(self.render_remote_workspace_strip(cx), |this, el| {
                 this.child(el)
@@ -6914,6 +6911,13 @@ impl Render for Tty7App {
                 .when_some(self.render_worktree_prompt_overlay(cx), |this, el| {
                     this.child(el)
                 })
+                // Same reason, and the ssh prompt has more claim to it than any
+                // of them: nothing in the window can proceed until the password
+                // is answered, so the scrim has to cover the whole window and
+                // not stop at the terminal area.
+                .when_some(self.render_ssh_prompt_overlay(window, cx), |this, el| {
+                    this.child(el)
+                })
                 .children(self.render_switcher(window, cx))
                 .when_some(self.palette.clone(), |this, palette| this.child(palette))
                 .children(gpui_component::Root::render_notification_layer(window, cx));
@@ -7288,10 +7292,14 @@ pub(crate) fn new_terminal(
         owner,
         font_size,
     };
+    // The same leak the reconnect banner had: this name is read out as
+    // "Connecting to {machine}…" and "Could not reach {machine}", and a
+    // `Profile` target spells itself as its config UUID (#485). The pane's own
+    // notifications already resolve it through the live config.
     let machine = spawn
         .workspace
         .as_ref()
-        .map(|w| w.target.to_string())
+        .map(|w| crate::ui::remote_connect::target_label(cx, &w.target))
         .unwrap_or_else(|| t(L10nKey::AppLocalServerName).to_string());
     let pending = cx.new(|cx| crate::ui::pending_pane::PendingPane::new(machine, spawn, cx));
     cx.subscribe_in(
