@@ -145,6 +145,7 @@ impl Tty7App {
             .track_scroll(&self.sidebar_scroll)
             .flex_1()
             .min_h_0()
+            .w_full()
             .overflow_y_scroll()
             .px_1()
             .py_1p5()
@@ -1132,8 +1133,17 @@ impl Tty7App {
             .border_color(cx.theme().sidebar_border)
             .child(backing)
             .child(
+                // Real pixels, not `size_full`: the rail's own width is a
+                // definite `px`, but a percentage off it is still a percentage,
+                // and on the passes that size this column from its content it
+                // resolves against nothing. Everything below asks for `w_full`
+                // — the tab rows, their group blocks, the scroll area — so one
+                // unresolved link here collapsed the whole chain and every row
+                // fell back to hugging the longest tab name. Border-box takes
+                // the rail's 1px right border off the content width.
                 v_flex()
-                    .size_full()
+                    .w(px(width - 1.))
+                    .h_full()
                     .child(crate::ui::app::title_bar_drag(
                         controls.id("sidebar-titlebar-drag"),
                         "sidebar-titlebar-drag",
