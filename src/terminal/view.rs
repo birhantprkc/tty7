@@ -4,9 +4,9 @@ use alacritty_terminal::index::{Column, Direction, Line, Point, Side};
 use alacritty_terminal::selection::{Selection, SelectionType};
 use alacritty_terminal::term::TermMode;
 use gpui::{
-    App, ClipboardEntry, ClipboardItem, Context, ExternalPaths, FocusHandle, Focusable, Font,
-    KeyDownEvent, Modifiers, MouseButton, MouseDownEvent, Pixels, ScrollDelta, ScrollWheelEvent,
-    WeakEntity, Window, actions, div, prelude::*, px,
+    App, ClipboardEntry, ClipboardItem, Context, EntityId, ExternalPaths, FocusHandle, Focusable,
+    Font, KeyDownEvent, Modifiers, MouseButton, MouseDownEvent, Pixels, ScrollDelta,
+    ScrollWheelEvent, WeakEntity, Window, actions, div, prelude::*, px,
 };
 use gpui_component::kbd::Kbd;
 use gpui_component::menu::{ContextMenuExt, PopupMenuItem};
@@ -35,6 +35,52 @@ use crate::ui::i18n::{L10nKey, t, t_fmt};
 
 const GRID_PAD_X: f32 = 8.;
 const GRID_PAD_Y: f32 = 4.;
+
+/// Which panes are on screen right now, readable without touching the entity
+/// map. The chrome (tab strip, sidebar, switcher) reads every pane entity
+/// while the window draws, so gpui tracks them all and `notify()` from a
+/// hidden pane still dirties the window — this flag is the out-of-band answer
+/// the output pump consults instead. `Tty7App::render` declares it each frame
+/// for its own tabs; a pane nobody has declared yet counts as displayed, so a
+/// missed path can only cost extra repaints, never a frozen grid.
+///
+/// A gpui `Global` rather than a `static`: entity ids are only unique within
+/// one `App`, and parallel `#[gpui::test]` apps mint colliding ids — a
+/// process-wide map would let one test's declarations flip another's flags.
+/// In the shipped binary there is exactly one `App`, so the two are the same.
+#[derive(Default)]
+struct DisplayedRegistry(
+    std::sync::Mutex<
+        std::collections::HashMap<EntityId, std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    >,
+);
+
+impl gpui::Global for DisplayedRegistry {}
+
+pub fn declare_displayed(cx: &App, panes: impl IntoIterator<Item = (EntityId, bool)>) {
+    // No registry means no pane has ever been built in this app.
+    let Some(registry) = cx.try_global::<DisplayedRegistry>() else {
+        return;
+    };
+    let map = registry.0.lock().unwrap();
+    for (id, on) in panes {
+        if let Some(flag) = map.get(&id) {
+            flag.store(on, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}
+
+/// What the registry holds for `id`: `None` when the pane never registered
+/// (or already released), otherwise the flag the output gate would consult.
+#[cfg(all(test, unix))]
+pub(crate) fn displayed_for_test(cx: &App, id: EntityId) -> Option<bool> {
+    cx.try_global::<DisplayedRegistry>()?
+        .0
+        .lock()
+        .unwrap()
+        .get(&id)
+        .map(|flag| flag.load(std::sync::atomic::Ordering::Relaxed))
+}
 
 actions!(
     terminal,
@@ -160,6 +206,9 @@ pub struct TerminalView {
     /// "preparation failed" — see [`staging_cache`].
     remote_clipboard_dir: Option<String>,
     pub focus_handle: FocusHandle,
+    /// See [`displayed_registry`]. Shared with the registry so the app can
+    /// flip it during a draw without an entity access.
+    displayed: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub font: Font,
     pub font_bold: Option<Font>,
     pub font_italic: Option<Font>,
@@ -1110,6 +1159,12 @@ impl TerminalView {
                 while let Ok(ev) = events.try_recv() {
                     batch.push(ev);
                 }
+                // Output reaches the screen through `handle_event`'s
+                // `notify()`, which gpui scopes to windows currently
+                // rendering this view. A pane in a background tab must stay
+                // out of the frame loop entirely: refreshing the window
+                // directly from here pinned the visible tab at full frame
+                // rate whenever any hidden pane was producing output.
                 let res = this.update(cx, |view, cx| {
                     let mut woke = false;
                     for ev in batch.drain(..) {
@@ -1118,14 +1173,9 @@ impl TerminalView {
                         }
                         view.handle_event(ev, cx);
                     }
-                    woke
                 });
-                let woke = match res {
-                    Ok(woke) => woke,
-                    Err(_) => break,
-                };
-                if woke {
-                    let _ = this.update_in(cx, |_, window, _| window.refresh());
+                if res.is_err() {
+                    break;
                 }
             }
         })
@@ -1190,7 +1240,18 @@ impl TerminalView {
         })
         .detach();
 
-        cx.on_release_in(window, |view, window, cx| {
+        let displayed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let entity_id = cx.entity().entity_id();
+        cx.default_global::<DisplayedRegistry>()
+            .0
+            .lock()
+            .unwrap()
+            .insert(entity_id, displayed.clone());
+
+        cx.on_release_in(window, move |view, window, cx| {
+            if let Some(registry) = cx.try_global::<DisplayedRegistry>() {
+                registry.0.lock().unwrap().remove(&entity_id);
+            }
             view.terminal.detach_link();
             for image in view.terminal.images().take_for_release() {
                 cx.drop_image(image, Some(window));
@@ -1221,6 +1282,7 @@ impl TerminalView {
             ssh_spec: None,
             remote_clipboard_dir: None,
             focus_handle,
+            displayed,
             font,
             font_bold,
             font_italic,
@@ -1652,7 +1714,13 @@ impl TerminalView {
             AlacEvent::Wakeup => {
                 // The grid moved under whatever the search bar last measured.
                 self.note_output_under_search(cx);
-                cx.notify();
+                // Only a pane that is on screen repaints on output. The
+                // chrome's per-frame entity reads keep every pane in the
+                // window's tracked set, so an ungated notify from a
+                // background tab would dirty the window at output rate.
+                if self.displayed.load(std::sync::atomic::Ordering::Relaxed) {
+                    cx.notify();
+                }
             }
             AlacEvent::Title(title) => self.set_title_when_settled(title, cx),
             AlacEvent::ResetTitle => self.set_title_when_settled(self.default_title.clone(), cx),
