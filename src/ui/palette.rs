@@ -75,6 +75,10 @@ pub enum CommandKind {
     ToggleSftp,
     ShowSshForwards,
     ToggleCodePanel,
+    ToggleDocumentFill,
+    DocumentWidthThird,
+    DocumentWidthHalf,
+    DocumentWidthTwoThirds,
     RestartSshSession,
     ScmCommit,
     ScmStageAll,
@@ -182,6 +186,10 @@ impl CommandKind {
             ToggleSftp => "ssh-remote-files",
             ShowSshForwards => "ssh-port-forwarding",
             ToggleCodePanel => "code-panel",
+            ToggleDocumentFill => "document-fill",
+            DocumentWidthThird => "document-width-third",
+            DocumentWidthHalf => "document-width-half",
+            DocumentWidthTwoThirds => "document-width-two-thirds",
             RestartSshSession => "ssh-reconnect",
             ScmCommit => "git-commit",
             ScmStageAll => "git-stage-all",
@@ -281,6 +289,10 @@ impl CommandKind {
             ToggleSftp => "ToggleSftp",
             ShowSshForwards => "ShowSshForwards",
             ToggleCodePanel => "ToggleCodePanel",
+            ToggleDocumentFill => "ToggleDocumentFill",
+            DocumentWidthThird => "DocumentWidthThird",
+            DocumentWidthHalf => "DocumentWidthHalf",
+            DocumentWidthTwoThirds => "DocumentWidthTwoThirds",
             RestartSshSession => "RestartSshSession",
             OpenSshProfiles => "OpenSshProfiles",
             ScmCommit => "ScmCommit",
@@ -359,6 +371,11 @@ impl CommandGroup {
 pub struct ChromeState {
     pub rail_collapsed: bool,
     pub right_panel_visible: bool,
+    /// Whether the *active tab's* document is filling the window. Passed in
+    /// rather than read off the config here: `document_layout` in the config is
+    /// only what a tab that has never been told starts from, so a tab that was
+    /// told would have had the row offer it the state it is already in.
+    pub document_filled: bool,
 }
 
 #[derive(Clone)]
@@ -410,6 +427,7 @@ impl Command {
         let tab_bar_left = cfg.tab_bar_position == TabBarPosition::Left;
         let sidebar_hidden = chrome.rail_collapsed || !tab_bar_left;
         let right_panel_open = chrome.right_panel_visible;
+        let document_filled = chrome.document_filled;
 
         let tabs = [
             Command::localized(L10nKey::CmdNewTab, NewTab),
@@ -473,6 +491,17 @@ impl Command {
                 ToggleRightPanel,
             ),
             Command::localized(L10nKey::CmdShowCodePanel, ToggleCodePanel),
+            Command::localized(
+                if document_filled {
+                    L10nKey::CmdDocumentDock
+                } else {
+                    L10nKey::CmdDocumentFill
+                },
+                ToggleDocumentFill,
+            ),
+            Command::localized(L10nKey::CmdDocumentWidthThird, DocumentWidthThird),
+            Command::localized(L10nKey::CmdDocumentWidthHalf, DocumentWidthHalf),
+            Command::localized(L10nKey::CmdDocumentWidthTwoThirds, DocumentWidthTwoThirds),
             Command::localized(
                 if tab_bar_left {
                     L10nKey::CmdTabBarMoveToTop
@@ -1543,6 +1572,7 @@ mod gpui_tests {
             let chrome = ChromeState {
                 rail_collapsed: false,
                 right_panel_visible: false,
+                document_filled: false,
             };
             let mut seen = std::collections::HashSet::new();
             for cmd in Command::base_commands(cx, chrome) {
@@ -1567,6 +1597,7 @@ mod gpui_tests {
             let chrome = ChromeState {
                 rail_collapsed: false,
                 right_panel_visible: false,
+                document_filled: false,
             };
             let cmds = Command::base_commands(cx, chrome);
             let git = cmds.iter().filter(|c| c.group == CommandGroup::Git).count();
