@@ -88,6 +88,7 @@ actions!(
         CopyText,
         CutText,
         PasteText,
+        AlternatePaste,
         SelectAll,
         UndoEdit,
         RedoEdit,
@@ -1851,14 +1852,20 @@ impl TerminalView {
             }
         }
 
-        // Ctrl+Shift+C/V/X are the keymap's alone: rebinding Paste has to
-        // retire Ctrl+Shift+V, which it cannot if this path answers it too.
+        // Ctrl+V is not here: off macOS it is the `AlternatePaste` binding,
+        // which the keymap withholds on the alternate screen so a full-screen
+        // program gets its SYN, and which the user can retire outright. Copy
+        // and cut stay, because both answer a selection this view owns and
+        // fall through to the PTY when there is none.
+        //
+        // Ctrl+Shift+C/X are the keymap's alone: rebinding Copy has to retire
+        // Ctrl+Shift+C, which it cannot if this path answers it too.
         if cfg!(not(target_os = "macos"))
             && m.control
             && !m.platform
             && !m.alt
             && !m.shift
-            && matches!(ks.key.as_str(), "c" | "v" | "x")
+            && matches!(ks.key.as_str(), "c" | "x")
         {
             match self.handle_cmd_shortcut(ks, window, cx) {
                 CmdKey::Consumed => {
@@ -1867,18 +1874,6 @@ impl TerminalView {
                 }
                 CmdKey::Bubble | CmdKey::FallThrough => {}
             }
-        }
-
-        if cfg!(not(target_os = "macos"))
-            && m.control
-            && !m.platform
-            && !m.alt
-            && matches!(
-                ks.key.as_str(),
-                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
-            )
-        {
-            return;
         }
 
         if !self.accepts_input(cx) {
@@ -1992,17 +1987,12 @@ impl TerminalView {
                     CmdKey::FallThrough
                 }
             }
+            // Cmd+V only: macOS leaves `PasteText` unbound and pastes from
+            // here, and Cmd carries no control code to lose. The Ctrl+V half
+            // of this key lives in the keymap as `AlternatePaste`.
             "v" => {
-                // Off macOS Ctrl+V is a control code first: on the alternate
-                // screen the key is the program's (vim's blockwise select), the
-                // way Ctrl+C is SIGINT when there is nothing to copy. Cmd+V
-                // pastes anywhere.
-                if m.control && !m.platform && self.on_alt_screen() {
-                    CmdKey::FallThrough
-                } else {
-                    self.paste_from_clipboard(cx);
-                    CmdKey::Consumed
-                }
+                self.paste_from_clipboard(cx);
+                CmdKey::Consumed
             }
             "a" => {
                 self.select_all_contextual(cx);
@@ -2471,6 +2461,41 @@ impl TerminalView {
 
     fn any_selection(&self) -> bool {
         self.has_selection() || (self.input_active() && self.cmd.selected_text().is_some())
+    }
+
+    /// The keymap context this pane declares each frame.
+    ///
+    /// `alt_screen` is how a binding steps aside for a full-screen program:
+    /// `AlternatePaste` carries `Terminal && !alt_screen`, so Ctrl+V pastes at
+    /// a prompt, reaches vim as SYN, and can still be handed the whole screen
+    /// by rebinding `PasteText` onto it (#677).
+    pub(super) fn key_context(&self) -> gpui::KeyContext {
+        let mut context = gpui::KeyContext::new_with_defaults();
+        context.add("Terminal");
+        if self.on_alt_screen() {
+            context.add("alt_screen");
+        }
+        context
+    }
+
+    /// `AlternatePaste`, with the grid asked again before it pastes.
+    ///
+    /// The `!alt_screen` half of the binding's context comes from the frame
+    /// that was last *painted*, and gpui matches keystrokes against that frame
+    /// — so a program that took the alternate screen after the last paint is
+    /// still "at a prompt" as far as the keymap is concerned. One frame is
+    /// enough: the keystroke that launches a full-screen program and the
+    /// Ctrl+V after it can land either side of a paint. Pasting there is not a
+    /// mistake the user can take back — vim in normal mode runs the clipboard
+    /// as commands — so the last word belongs to the terminal mode, not to the
+    /// frame. Propagating hands the chord on to `on_key_down`, which encodes it
+    /// as the SYN the program is waiting for.
+    fn alternate_paste(&mut self, cx: &mut Context<Self>) {
+        if self.on_alt_screen() {
+            cx.propagate();
+            return;
+        }
+        self.paste_from_clipboard(cx);
     }
 
     pub(super) fn key_flags(&self) -> super::input::KeyFlags {
@@ -6064,7 +6089,7 @@ impl Render for TerminalView {
         div()
             .id("terminal-surface")
             .track_focus(&self.focus_handle)
-            .key_context("Terminal")
+            .key_context(self.key_context())
             .size_full()
             .relative()
             .overflow_hidden()
@@ -6108,6 +6133,7 @@ impl Render for TerminalView {
                 this.cut_contextual(cx);
             }))
             .on_action(cx.listener(|this, _: &PasteText, _w, cx| this.paste_from_clipboard(cx)))
+            .on_action(cx.listener(|this, _: &AlternatePaste, _w, cx| this.alternate_paste(cx)))
             .on_action(cx.listener(|this, _: &SelectAll, _w, cx| this.select_all_contextual(cx)))
             .on_action(cx.listener(|this, _: &UndoEdit, _w, cx| this.undo_edit(false, cx)))
             .on_action(cx.listener(|this, _: &RedoEdit, _w, cx| this.undo_edit(true, cx)))
@@ -12136,46 +12162,122 @@ mod gpui_tests {
     }
 
     #[gpui::test]
-    fn ctrl_v_reaches_a_tui_on_the_alternate_screen(cx: &mut TestAppContext) {
+    fn cmd_v_pastes_on_the_alternate_screen(cx: &mut TestAppContext) {
         let (window, mut daemon) = harness(cx);
         cx.update(|cx| cx.write_to_clipboard(ClipboardItem::new_string("echo hi".into())));
         alt_screen_ready(&window, cx, &mut daemon);
 
         window
             .update(cx, |view, window, cx| {
-                let fell_through = view.handle_cmd_shortcut(&key("ctrl-v"), window, cx);
-                assert!(
-                    matches!(fell_through, CmdKey::FallThrough),
-                    "a full-screen program owns Ctrl+V"
-                );
                 let pasted = view.handle_cmd_shortcut(&key("cmd-v"), window, cx);
                 assert!(
                     matches!(pasted, CmdKey::Consumed),
-                    "Cmd+V is a paste chord on every screen"
+                    "Cmd+V carries no control code and pastes on every screen"
                 );
             })
             .unwrap();
-        assert_eq!(
-            next_input(&mut daemon),
-            b"echo hi".to_vec(),
-            "only the Cmd+V paste may reach the PTY"
-        );
+        assert_eq!(next_input(&mut daemon), b"echo hi".to_vec());
         assert_eq!(next_input_until_timeout(&mut daemon), None);
     }
 
+    /// The Ctrl+V half of the same key, through the real keymap: whether it
+    /// pastes is the `AlternatePaste` binding's decision, not this view's, so
+    /// these two drive it the way a user does rather than calling in.
+    #[cfg(not(target_os = "macos"))]
     #[gpui::test]
-    fn ctrl_v_pastes_off_the_alternate_screen(cx: &mut TestAppContext) {
+    fn ctrl_v_pastes_at_a_prompt(cx: &mut TestAppContext) {
+        crate::core::config::pin_test_config_dir();
+        let (window, mut daemon) = harness(cx);
+        cx.update(|cx| crate::ui::keymap::init(cx));
+        cx.update(|cx| cx.write_to_clipboard(ClipboardItem::new_string("echo hi".into())));
+        window
+            .update(cx, |view, window, cx| {
+                assert!(!view.on_alt_screen());
+                window.activate_window();
+                view.focus_handle.focus(window, cx);
+            })
+            .unwrap();
+
+        let mut vcx = gpui::VisualTestContext::from_window(window.into(), cx);
+        vcx.simulate_keystrokes("ctrl-v");
+
+        assert_eq!(
+            next_input_until_timeout(&mut daemon),
+            Some(b"echo hi".to_vec())
+        );
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[gpui::test]
+    fn ctrl_v_reaches_a_full_screen_program_as_syn(cx: &mut TestAppContext) {
+        crate::core::config::pin_test_config_dir();
+        let (window, mut daemon) = harness(cx);
+        cx.update(|cx| crate::ui::keymap::init(cx));
+        cx.update(|cx| cx.write_to_clipboard(ClipboardItem::new_string("echo hi".into())));
+        alt_screen_ready(&window, cx, &mut daemon);
+        window
+            .update(cx, |view, window, cx| {
+                window.activate_window();
+                view.focus_handle.focus(window, cx);
+            })
+            .unwrap();
+
+        let mut vcx = gpui::VisualTestContext::from_window(window.into(), cx);
+        vcx.simulate_keystrokes("ctrl-v");
+
+        assert_eq!(next_input_until_timeout(&mut daemon), Some(vec![0x16]));
+    }
+
+    /// The other half of that rule, which the binding's context cannot state.
+    ///
+    /// gpui matches a keystroke against the frame it last *painted*, so
+    /// `!alt_screen` outlives the switch by a frame: launch a full-screen
+    /// program and hit Ctrl+V before the next paint and the keymap still
+    /// believes the pane is at a prompt. The action asks the grid itself, so
+    /// the clipboard never lands in a program that would run it as commands.
+    #[gpui::test]
+    fn alternate_paste_asks_the_grid_and_not_the_last_frame(cx: &mut TestAppContext) {
         let (window, mut daemon) = harness(cx);
         cx.update(|cx| cx.write_to_clipboard(ClipboardItem::new_string("echo hi".into())));
 
         window
-            .update(cx, |view, window, cx| {
+            .update(cx, |view, _window, cx| {
                 assert!(!view.on_alt_screen());
-                let consumed = view.handle_cmd_shortcut(&key("ctrl-v"), window, cx);
-                assert!(matches!(consumed, CmdKey::Consumed));
+                view.alternate_paste(cx);
             })
             .unwrap();
         assert_eq!(next_input(&mut daemon), b"echo hi".to_vec());
+
+        alt_screen_ready(&window, cx, &mut daemon);
+        window
+            .update(cx, |view, _window, cx| view.alternate_paste(cx))
+            .unwrap();
+        assert_eq!(
+            next_input_until_timeout(&mut daemon),
+            None,
+            "the paste is withheld even when the frame that matched said otherwise"
+        );
+    }
+
+    /// `Ctrl-^`, which used to die in a hardcoded block that swallowed every
+    /// Ctrl+digit off macOS — nothing has claimed those chords since tabs
+    /// moved to Alt+1..9.
+    #[gpui::test]
+    fn ctrl_6_reaches_the_pty_as_rs(cx: &mut TestAppContext) {
+        crate::core::config::pin_test_config_dir();
+        let (window, mut daemon) = harness(cx);
+        cx.update(|cx| crate::ui::keymap::init(cx));
+        window
+            .update(cx, |view, window, cx| {
+                window.activate_window();
+                view.focus_handle.focus(window, cx);
+            })
+            .unwrap();
+
+        let mut vcx = gpui::VisualTestContext::from_window(window.into(), cx);
+        vcx.simulate_keystrokes("ctrl-6");
+
+        assert_eq!(next_input_until_timeout(&mut daemon), Some(vec![0x1e]));
     }
 
     #[cfg(target_os = "macos")]
