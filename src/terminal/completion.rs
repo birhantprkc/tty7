@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use crate::core::shell_quote::{Quoting, unquote_word};
+
 use super::signature::{self, Arg, CmdNode, Signature};
 
 struct WordCand {
@@ -117,8 +119,23 @@ fn current_command(chars: &[char], word_start: usize) -> Option<String> {
     (!base.is_empty()).then(|| base.to_string())
 }
 
-pub fn complete(line: &str, cursor: usize, cwd: Option<&Path>) -> Option<Completion> {
-    complete_inner(line, cursor, cwd, cwd.is_some())
+/// `shell` is the pane's shell binary, which decides how the word under the
+/// cursor is quoted — above all whether a backslash in it is an escape
+/// character or a path separator. Get it wrong on Windows and every native
+/// path loses its separators before the lookup, so no directory ever resolves.
+pub fn complete(
+    line: &str,
+    cursor: usize,
+    cwd: Option<&Path>,
+    shell: Option<&str>,
+) -> Option<Completion> {
+    complete_inner(
+        line,
+        cursor,
+        cwd,
+        cwd.is_some(),
+        crate::core::shell_quote::quoting_for(shell),
+    )
 }
 
 /// Completion for a pane whose filesystem this process can only reach through
@@ -129,7 +146,9 @@ pub fn complete(line: &str, cursor: usize, cwd: Option<&Path>) -> Option<Complet
 /// machine's commands) and generator scripts do not run (they would launch
 /// Windows tools against a Linux checkout).
 pub fn complete_foreign(line: &str, cursor: usize, cwd: &Path) -> Option<Completion> {
-    complete_inner(line, cursor, Some(cwd), false)
+    // A WSL pane runs a Linux shell over Linux paths, so a backslash is an
+    // escape there whatever this machine happens to be.
+    complete_inner(line, cursor, Some(cwd), false, Quoting::Posix)
 }
 
 fn complete_inner(
@@ -137,6 +156,7 @@ fn complete_inner(
     cursor: usize,
     cwd: Option<&Path>,
     this_machine: bool,
+    quoting: Quoting,
 ) -> Option<Completion> {
     let chars: Vec<char> = line.chars().collect();
     let cursor = cursor.min(chars.len());
@@ -147,7 +167,7 @@ fn complete_inner(
     let (word_cands, pending) = if is_command && !word.contains('/') {
         (complete_command(&word, this_machine), Vec::new())
     } else {
-        match complete_signature(&chars, word_start, &word, cwd) {
+        match complete_signature(&chars, word_start, &word, cwd, quoting) {
             Some(sig) => (
                 sig.cands,
                 if this_machine {
@@ -165,7 +185,7 @@ fn complete_inner(
                 Some(cwd) => {
                     let dirs_only = current_command(&chars, word_start)
                         .is_some_and(|c| DIR_ONLY_COMMANDS.contains(&c.as_str()));
-                    (complete_path(&word, cwd, dirs_only), Vec::new())
+                    (complete_path(&word, cwd, dirs_only, quoting), Vec::new())
                 }
             },
         }
@@ -192,25 +212,36 @@ fn complete_inner(
     }
 }
 
-/// Finds the start of the shell word at `cursor`. A whitespace character
-/// preceded by an odd-length run of backslashes belongs to the word, as in
-/// `My\ Documents/` after a path candidate has been inserted.
+/// Finds the start of the shell word at `cursor`.
+///
+/// A space only ends the word when the shell would treat it as a separator, so
+/// this has to track quoting: a path candidate goes in as `'My Documents'/`,
+/// and a user who typed `My\ Documents` by hand means the same thing. The scan
+/// runs forward, the same way [`segment_start`] does, because the word under
+/// the cursor is usually still being typed and its closing quote does not
+/// exist yet — there is nothing for a backward scan to match against.
 fn shell_word_start(chars: &[char], cursor: usize) -> usize {
-    let mut start = cursor.min(chars.len());
-    while start > 0 {
-        if !chars[start - 1].is_whitespace() {
-            start -= 1;
+    let end = cursor.min(chars.len());
+    let mut start = 0;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for (i, &c) in chars[..end].iter().enumerate() {
+        if escaped {
+            escaped = false;
             continue;
         }
-        let escapes = chars[..start - 1]
-            .iter()
-            .rev()
-            .take_while(|&&c| c == '\\')
-            .count();
-        if escapes % 2 == 0 {
-            break;
+        match (quote, c) {
+            // As in `segment_start`: a backslash escapes the next character
+            // everywhere but inside single quotes. A Windows path's separators
+            // survive this — the character after one is never a quote or a
+            // space, so swallowing it changes nothing.
+            (None, '\\') | (Some('"'), '\\') => escaped = true,
+            (None, '\'' | '"') => quote = Some(c),
+            (Some(q), _) if c == q => quote = None,
+            (Some(_), _) => {}
+            (None, c) if c.is_whitespace() => start = i + 1,
+            (None, _) => {}
         }
-        start -= 1;
     }
     start
 }
@@ -304,7 +335,9 @@ pub fn remote_path_request(
         return None;
     }
 
-    let word = unescape_path_word(&word);
+    // The far end of a remote pane is always POSIX — a backslash there is an
+    // escape, never a separator.
+    let word = unquote_word(&word, Quoting::Posix);
     let (dir_part, prefix) = match word.rfind('/') {
         Some(i) => (&word[..=i], &word[i + 1..]),
         None => ("", word.as_str()),
@@ -364,11 +397,11 @@ pub fn remote_path_candidates(req: &RemotePathRequest, entries: &[RemoteEntry]) 
     out
 }
 
-fn complete_path(word: &str, cwd: &Path, dirs_only: bool) -> Vec<WordCand> {
-    // Candidates are emitted unescaped and escaped at insertion time. Undo the
-    // corresponding backslash quoting for lookup, so a second Tab after
-    // inserting `My\ Documents/` still enters the real directory.
-    let word = unescape_path_word(word);
+fn complete_path(word: &str, cwd: &Path, dirs_only: bool, quoting: Quoting) -> Vec<WordCand> {
+    // Candidates are emitted unquoted and quoted at insertion time. Undo the
+    // corresponding quoting for lookup, so a second Tab after inserting
+    // `'My Documents'/` still enters the real directory.
+    let word = unquote_word(word, quoting);
     let (dir_part, prefix) = match word.rfind(std::path::is_separator) {
         Some(i) => (&word[..=i], &word[i + 1..]),
         None => ("", word.as_str()),
@@ -413,25 +446,6 @@ fn complete_path(word: &str, cwd: &Path, dirs_only: bool) -> Vec<WordCand> {
     out
 }
 
-fn unescape_path_word(word: &str) -> String {
-    let mut out = String::with_capacity(word.len());
-    let mut escaped = false;
-    for ch in word.chars() {
-        if escaped {
-            out.push(ch);
-            escaped = false;
-        } else if ch == '\\' {
-            escaped = true;
-        } else {
-            out.push(ch);
-        }
-    }
-    if escaped {
-        out.push('\\');
-    }
-    out
-}
-
 struct SigResult {
     cands: Vec<WordCand>,
     pending: Vec<PendingGenerator>,
@@ -442,6 +456,7 @@ fn complete_signature(
     word_start: usize,
     word: &str,
     cwd: Option<&Path>,
+    quoting: Quoting,
 ) -> Option<SigResult> {
     let prefix: String = chars[..word_start].iter().collect();
     let tokens: Vec<&str> = prefix[segment_start(&prefix)..]
@@ -480,7 +495,7 @@ fn complete_signature(
         push_arg_suggestions(&mut out, arg, word);
         if let Some(cwd) = cwd {
             if arg.wants_paths() {
-                out.extend(complete_path(word, cwd, arg.wants_dirs_only()));
+                out.extend(complete_path(word, cwd, arg.wants_dirs_only(), quoting));
             }
         }
         let pending = match cwd {
@@ -518,7 +533,7 @@ fn complete_signature(
         push_arg_suggestions(&mut out, arg, word);
         if let Some(cwd) = cwd {
             if arg.wants_paths() {
-                out.extend(complete_path(word, cwd, arg.wants_dirs_only()));
+                out.extend(complete_path(word, cwd, arg.wants_dirs_only(), quoting));
             }
         }
         if cwd.is_some() {
@@ -775,9 +790,14 @@ mod tests {
     }
 
     fn texts(line: &str) -> Vec<String> {
-        complete(line, line.chars().count(), Some(Path::new("/")))
-            .map(|c| c.candidates.into_iter().map(|c| c.text).collect())
-            .unwrap_or_default()
+        complete(
+            line,
+            line.chars().count(),
+            Some(Path::new("/")),
+            Some("zsh"),
+        )
+        .map(|c| c.candidates.into_iter().map(|c| c.text).collect())
+        .unwrap_or_default()
     }
 
     #[test]
@@ -801,7 +821,7 @@ mod tests {
         // after it keeps the path fallback it always had. The cwd is a tree we
         // built rather than `/`, which holds nothing predictable on Windows.
         let dir = temp_tree("after-pipe", &[("etc", true)]);
-        let c = complete("ls | grep et", 12, Some(&dir)).unwrap();
+        let c = complete("ls | grep et", 12, Some(&dir), Some("zsh")).unwrap();
         assert!(
             c.candidates
                 .iter()
@@ -852,7 +872,7 @@ mod tests {
         let t = texts("git ");
         assert!(t.iter().any(|s| s == "commit"), "git subcommands: {t:?}");
         assert!(t.iter().any(|s| s == "status"));
-        let c = complete("git ", 4, Some(Path::new("/"))).unwrap();
+        let c = complete("git ", 4, Some(Path::new("/")), Some("zsh")).unwrap();
         let commit = c.candidates.iter().find(|c| c.text == "commit").unwrap();
         assert_eq!(commit.kind, CandidateKind::Value);
         assert!(commit.description.is_some());
@@ -867,7 +887,7 @@ mod tests {
 
     #[test]
     fn signature_offers_flags_for_the_active_subcommand() {
-        let c = complete("git commit --", 13, Some(Path::new("/"))).unwrap();
+        let c = complete("git commit --", 13, Some(Path::new("/")), Some("zsh")).unwrap();
         let msg = c.candidates.iter().find(|c| c.text == "--message").unwrap();
         assert_eq!(msg.kind, CandidateKind::Flag);
         assert_eq!(
@@ -889,7 +909,7 @@ mod tests {
     fn generator_arg_pends_scripts_and_suppresses_path_fallback() {
         let dir = temp_tree("gen-checkout", &[("sentinel.txt", false), ("subdir", true)]);
         let line = "git checkout ";
-        let c = complete(line, line.chars().count(), Some(dir.as_path()))
+        let c = complete(line, line.chars().count(), Some(dir.as_path()), Some("zsh"))
             .expect("generator slot is a completion");
         assert!(
             !c.pending.is_empty(),
@@ -913,7 +933,7 @@ mod tests {
 
     #[test]
     fn generator_script_tokens_join_with_single_spaces() {
-        let c = complete("git checkout ", 13, Some(Path::new("/"))).unwrap();
+        let c = complete("git checkout ", 13, Some(Path::new("/")), Some("zsh")).unwrap();
         let branch = c
             .pending
             .iter()
@@ -965,7 +985,7 @@ mod tests {
     fn dir_only_commands_complete_only_directories() {
         let dir = temp_tree("dironly", &[("target", true), ("tar.gz", false)]);
         let only_dirs = |line: &str| {
-            complete(line, line.chars().count(), Some(dir.as_path()))
+            complete(line, line.chars().count(), Some(dir.as_path()), Some("zsh"))
                 .map(|c| c.candidates.into_iter().map(|c| c.text).collect::<Vec<_>>())
                 .unwrap_or_default()
         };
@@ -986,6 +1006,7 @@ mod tests {
             "frobnicate read",
             "frobnicate read".chars().count(),
             Some(dir.as_path()),
+            Some("zsh"),
         )
         .unwrap();
         assert_eq!(c.candidates[0].text, "readme.md");
@@ -1085,7 +1106,7 @@ mod tests {
 
     #[test]
     fn command_position_offers_builtins_with_word_range() {
-        let c = complete("ech", 3, Some(Path::new("/"))).unwrap();
+        let c = complete("ech", 3, Some(Path::new("/")), Some("zsh")).unwrap();
         let echo = c.candidates.iter().find(|c| c.text == "echo").unwrap();
         assert_eq!(echo.kind, CandidateKind::Command);
         assert_eq!((echo.start, echo.end), (0, 3));
@@ -1098,7 +1119,7 @@ mod tests {
             &[("apple.txt", false), ("apply.sh", false), ("assets", true)],
         );
         let line = "cat a";
-        let c = complete(line, line.chars().count(), Some(dir.as_path())).unwrap();
+        let c = complete(line, line.chars().count(), Some(dir.as_path()), Some("zsh")).unwrap();
         let names: Vec<&str> = c.candidates.iter().map(|c| c.text.as_str()).collect();
         assert_eq!(names, vec!["assets", "apply.sh", "apple.txt"]);
         let assets = c.candidates.iter().find(|c| c.text == "assets").unwrap();
@@ -1110,7 +1131,7 @@ mod tests {
     fn completion_reenters_a_directory_inserted_with_an_escaped_space() {
         let dir = temp_tree("escaped-path", &[("My Documents/notes.txt", false)]);
         let line = r"cat My\ Documents/no";
-        let c = complete(line, line.chars().count(), Some(dir.as_path())).unwrap();
+        let c = complete(line, line.chars().count(), Some(dir.as_path()), Some("zsh")).unwrap();
         assert_eq!(c.candidates[0].text, "My Documents/notes.txt");
         assert_eq!(
             (c.candidates[0].start, c.candidates[0].end),
@@ -1123,7 +1144,7 @@ mod tests {
         let dir = temp_tree("nested", &[("sub", true)]);
         std::fs::write(dir.join("sub/file.rs"), b"").unwrap();
         let line = "cat sub/f";
-        let c = complete(line, line.chars().count(), Some(dir.as_path())).unwrap();
+        let c = complete(line, line.chars().count(), Some(dir.as_path()), Some("zsh")).unwrap();
         assert_eq!(c.candidates[0].text, "sub/file.rs");
         assert_eq!(c.candidates[0].start, 4);
     }
@@ -1131,9 +1152,9 @@ mod tests {
     #[test]
     fn hidden_files_only_with_dot_prefix() {
         let dir = temp_tree("hidden", &[(".secret", false), ("visible", false)]);
-        let c = complete("ls v", 4, Some(dir.as_path())).unwrap();
+        let c = complete("ls v", 4, Some(dir.as_path()), Some("zsh")).unwrap();
         assert!(c.candidates.iter().all(|c| !c.text.starts_with('.')));
-        let c = complete("ls .", 4, Some(dir.as_path())).unwrap();
+        let c = complete("ls .", 4, Some(dir.as_path()), Some("zsh")).unwrap();
         assert!(c.candidates.iter().any(|c| c.text == ".secret"));
     }
 
@@ -1149,7 +1170,7 @@ mod tests {
             ],
         );
         let line = "cat x";
-        let c = complete(line, line.chars().count(), Some(dir.as_path())).unwrap();
+        let c = complete(line, line.chars().count(), Some(dir.as_path()), Some("zsh")).unwrap();
         let names: Vec<&str> = c.candidates.iter().map(|c| c.text.as_str()).collect();
         assert_eq!(names, vec!["xa", "xy", "xyz", "xyzzy"]);
     }
@@ -1158,19 +1179,20 @@ mod tests {
     fn a_remote_pane_completes_commands_but_never_local_paths() {
         let dir = temp_tree("remote", &[("only-here.txt", false), ("subdir", true)]);
 
-        let c = complete("cat only", 8, Some(dir.as_path())).expect("local pane completes paths");
+        let c = complete("cat only", 8, Some(dir.as_path()), Some("zsh"))
+            .expect("local pane completes paths");
         assert!(c.candidates.iter().any(|c| c.text.starts_with("only-here")));
 
-        assert!(complete("cat only", 8, None).is_none());
-        assert!(complete("cat ", 4, None).is_none());
+        assert!(complete("cat only", 8, None, Some("zsh")).is_none());
+        assert!(complete("cat ", 4, None, Some("zsh")).is_none());
 
-        let c = complete("ech", 3, None).expect("command completion needs no cwd");
+        let c = complete("ech", 3, None, Some("zsh")).expect("command completion needs no cwd");
         assert!(c.candidates.iter().any(|c| c.text == "echo"));
     }
 
     #[test]
     fn a_remote_pane_offers_builtins_but_never_this_machines_binaries() {
-        let remote: Vec<String> = complete("l", 1, None)
+        let remote: Vec<String> = complete("l", 1, None, Some("zsh"))
             .map(|c| c.candidates.into_iter().map(|c| c.text).collect())
             .unwrap_or_default();
         assert!(
@@ -1181,7 +1203,7 @@ mod tests {
 
         #[cfg(unix)]
         {
-            let local: Vec<String> = complete("l", 1, Some(Path::new("/")))
+            let local: Vec<String> = complete("l", 1, Some(Path::new("/")), Some("zsh"))
                 .map(|c| c.candidates.into_iter().map(|c| c.text).collect())
                 .unwrap_or_default();
             assert!(
@@ -1246,27 +1268,27 @@ mod tests {
 
     #[test]
     fn a_remote_pane_still_gets_a_signatures_static_candidates() {
-        let c = complete("git ", 4, None).expect("subcommands need no filesystem");
+        let c = complete("git ", 4, None, Some("zsh")).expect("subcommands need no filesystem");
         assert!(c.candidates.iter().any(|c| c.text == "commit"));
         assert!(c.candidates.iter().any(|c| c.text == "push"));
 
-        let c = complete("git ch", 6, None).expect("subcommands need no filesystem");
+        let c = complete("git ch", 6, None, Some("zsh")).expect("subcommands need no filesystem");
         assert!(c.candidates.iter().any(|c| c.text == "checkout"));
         assert!(!c.candidates.iter().any(|c| c.text == "commit"));
 
-        let c = complete("git commit --", 13, None).expect("flags need no filesystem");
+        let c = complete("git commit --", 13, None, Some("zsh")).expect("flags need no filesystem");
         assert!(c.candidates.iter().any(|c| c.text == "--message"));
     }
 
     #[test]
     fn a_remote_pane_never_runs_a_generator() {
-        let local = complete("git checkout ", 13, Some(Path::new("/"))).unwrap();
+        let local = complete("git checkout ", 13, Some(Path::new("/")), Some("zsh")).unwrap();
         assert!(
             !local.pending.is_empty(),
             "expected the local branch generator to still be declared"
         );
 
-        if let Some(remote) = complete("git checkout ", 13, None) {
+        if let Some(remote) = complete("git checkout ", 13, None, Some("zsh")) {
             assert!(
                 remote.pending.is_empty(),
                 "a remote pane scheduled local generators: {:?}",
@@ -1370,15 +1392,15 @@ mod tests {
     #[test]
     fn no_candidates_returns_none() {
         let dir = temp_tree("empty", &[("zzz", false)]);
-        assert!(complete("cat q", 5, Some(dir.as_path())).is_none());
-        assert!(complete("", 0, Some(dir.as_path())).is_none());
-        assert!(complete("   ", 3, Some(dir.as_path())).is_none());
+        assert!(complete("cat q", 5, Some(dir.as_path()), Some("zsh")).is_none());
+        assert!(complete("", 0, Some(dir.as_path()), Some("zsh")).is_none());
+        assert!(complete("   ", 3, Some(dir.as_path()), Some("zsh")).is_none());
     }
 
     #[test]
     fn mid_line_cursor_completes_only_the_word_before_it() {
         let dir = temp_tree("midline", &[("apple.txt", false)]);
-        let c = complete("cat ap x.log", 6, Some(dir.as_path())).unwrap();
+        let c = complete("cat ap x.log", 6, Some(dir.as_path()), Some("zsh")).unwrap();
         let apple = c.candidates.iter().find(|c| c.text == "apple.txt").unwrap();
         assert_eq!((apple.start, apple.end), (4, 6));
         let (line, cursor) = Replacement {

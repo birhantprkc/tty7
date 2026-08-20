@@ -36,9 +36,7 @@ use crate::ui::palette::{
 use crate::ui::pane::{CloseOutcome, Dir, Pane, PaneSlot};
 use crate::ui::presets::Fill;
 use crate::ui::scm::ScmIntent;
-use crate::ui::settings::{
-    Recording, SettingsSection, SettingsState, ThemeEditor, humanize_action,
-};
+use crate::ui::settings::{Recording, SettingsSection, SettingsState, ThemeEditor};
 use crate::ui::theme::{apply_theme, set_menus};
 
 /// What to start in a pane that is about to be opened.
@@ -5023,9 +5021,6 @@ impl Tty7App {
             ScmSync => self.run_scm_action(ScmIntent::Sync, window, cx),
             ScmCreateBranch => self.run_scm_action(ScmIntent::CreateBranch, window, cx),
             OpenBranchPicker => self.run_scm_action(ScmIntent::CheckoutBranch, window, cx),
-            // The branch picker fills this in once it can list refs; until
-            // then the palette never emits it.
-            CheckoutBranch(_) => {}
             ToggleDiffViewMode => self.toggle_diff_view_mode(cx),
             OpenThemePicker | OpenSshConnectInput => {}
             ActivateTab(i) => self.activate(i, window, cx),

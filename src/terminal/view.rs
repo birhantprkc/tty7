@@ -30,6 +30,7 @@ use crate::core::actions::{
     SplitDown, SplitRight, ToggleMaximizePane,
 };
 use crate::core::config::{BellMode, Config, LinkFileOpen, MouseZoomModifier, NotifyMode};
+use crate::core::shell_quote::quote_for_shell;
 use crate::daemon::protocol::{RemoteContext, ShellSpec};
 use crate::ui::i18n::{L10nKey, t, t_fmt};
 
@@ -675,56 +676,7 @@ fn trim_trailing_spaces(text: &str) -> String {
         .join("\n")
 }
 
-fn shell_escape_path(path: &str) -> String {
-    if path.is_empty() {
-        return "''".to_string();
-    }
-    if path.contains(['\n', '\r']) {
-        return format!("'{}'", path.replace('\'', "'\\''"));
-    }
-    let mut out = String::with_capacity(path.len() + 8);
-    for ch in path.chars() {
-        if matches!(
-            ch,
-            ' ' | '\t'
-                | '"'
-                | '\''
-                | '\\'
-                | '$'
-                | '`'
-                | '#'
-                | '='
-                | '!'
-                | '~'
-                | '['
-                | ']'
-                | '{'
-                | '}'
-                | '('
-                | ')'
-                | '<'
-                | '>'
-                | '|'
-                | ';'
-                | '*'
-                | '?'
-                | '&'
-        ) {
-            out.push('\\');
-        }
-        out.push(ch);
-    }
-    out
-}
-
-fn escape_candidate(text: &str) -> String {
-    match text.strip_prefix("~/") {
-        Some(rest) => format!("~/{}", shell_escape_path(rest)),
-        None => shell_escape_path(text),
-    }
-}
-
-fn clipboard_paste_text(item: &ClipboardItem) -> Option<String> {
+fn clipboard_paste_text(item: &ClipboardItem, shell: Option<&str>) -> Option<String> {
     let escaped: Vec<String> = item
         .entries()
         .iter()
@@ -733,7 +685,7 @@ fn clipboard_paste_text(item: &ClipboardItem) -> Option<String> {
             _ => None,
         })
         .flatten()
-        .map(|p| shell_escape_path(&p.to_string_lossy()))
+        .map(|p| quote_for_shell(&p.to_string_lossy(), shell))
         .collect();
     if !escaped.is_empty() {
         return Some(escaped.join(" "));
@@ -1705,6 +1657,16 @@ impl TerminalView {
 
     pub fn shell_spec(&self) -> Option<ShellSpec> {
         self.shell_spec.clone()
+    }
+
+    /// The shell binary this pane is running, for the path-quoting rules.
+    ///
+    /// `None` before the pane has resolved one, which [`quote_for_shell`]
+    /// answers from the platform — PowerShell on Windows, POSIX elsewhere.
+    /// The one pane that guess is wrong for is a cmd.exe pane that has not
+    /// reported in yet.
+    fn shell_program(&self) -> Option<String> {
+        self.shell_spec.as_ref().map(|s| s.program.clone())
     }
 
     pub fn ssh_spec(&self) -> Option<Box<crate::daemon::protocol::NativeSshSpec>> {
@@ -2828,7 +2790,7 @@ impl TerminalView {
         let Some(item) = cx.read_from_clipboard() else {
             return;
         };
-        if let Some(text) = clipboard_paste_text(&item) {
+        if let Some(text) = clipboard_paste_text(&item, self.shell_program().as_deref()) {
             self.paste(text, cx);
             return;
         }
@@ -2844,10 +2806,11 @@ impl TerminalView {
     }
 
     fn drop_files(&mut self, paths: &ExternalPaths, cx: &mut Context<Self>) {
+        let shell = self.shell_program();
         let text = paths
             .paths()
             .iter()
-            .map(|p| shell_escape_path(&p.to_string_lossy()))
+            .map(|p| quote_for_shell(&p.to_string_lossy(), shell.as_deref()))
             .collect::<Vec<_>>()
             .join(" ");
         if text.is_empty() {
@@ -2895,7 +2858,7 @@ impl TerminalView {
             .as_ref()
             .is_some_and(|w| w.shares_localhost());
         let path = staged_path_for_pane(&path.to_string_lossy(), shares_localhost);
-        let text = shell_escape_path(&path);
+        let text = quote_for_shell(&path, self.shell_program().as_deref());
         self.paste(format!("{text} "), cx);
         true
     }
@@ -2972,9 +2935,11 @@ impl TerminalView {
                     return;
                 }
             };
-            let text = shell_escape_path(&remote);
             if this
-                .update(cx, |view, cx| view.paste(format!("{text} "), cx))
+                .update(cx, |view, cx| {
+                    let text = quote_for_shell(&remote, view.shell_program().as_deref());
+                    view.paste(format!("{text} "), cx)
+                })
                 .is_err()
             {
                 return;
@@ -2998,8 +2963,9 @@ impl TerminalView {
         host: &str,
         reason: &str,
     ) {
-        let text = shell_escape_path(&local.to_string_lossy());
+        let local = local.to_string_lossy().into_owned();
         let _ = this.update_in(cx, |view, window, cx| {
+            let text = quote_for_shell(&local, view.shell_program().as_deref());
             view.paste(format!("{text} "), cx);
             view.warn_image_upload_failed(host, reason, window, cx);
         });
@@ -4215,7 +4181,12 @@ impl TerminalView {
         let cursor = self.cmd.cursor();
         let comp = match &share_cwd {
             Some(share) => super::completion::complete_foreign(&line, cursor, share),
-            None => super::completion::complete(&line, cursor, cwd.as_deref()),
+            None => super::completion::complete(
+                &line,
+                cursor,
+                cwd.as_deref(),
+                self.shell_program().as_deref(),
+            ),
         };
         let Some(comp) = comp else {
             if self.spawn_remote_path_completion(&line, cursor, forward, cx) {
@@ -4287,11 +4258,12 @@ impl TerminalView {
             .skip(word_start)
             .take(word_end - word_start)
             .collect();
+        let shell = self.shell_program();
         let s = CompletionSession::new(word_start, word.clone(), cands, pending_generators);
         if !has_pending
             && let Some(lcp) = s.common_prefix()
             && lcp.chars().count() > word.chars().count()
-            && escape_candidate(&lcp) == lcp
+            && quote_for_shell(&lcp, shell.as_deref()) == lcp
         {
             self.apply_candidate(line, word_start, word_end, &lcp);
         }
@@ -4503,6 +4475,7 @@ impl TerminalView {
 
     fn completion_tab_step(&mut self, forward: bool, cx: &mut Context<Self>) {
         if forward {
+            let shell = self.shell_program();
             let Some(s) = self.completion.as_ref() else {
                 return;
             };
@@ -4516,7 +4489,7 @@ impl TerminalView {
                     self.completion_accept(cx);
                     return;
                 }
-                if escape_candidate(&lcp) == lcp {
+                if quote_for_shell(&lcp, shell.as_deref()) == lcp {
                     self.apply_candidate(&line, word_start, cursor, &lcp);
                     self.cursor_visible = true;
                     cx.notify();
@@ -4550,7 +4523,7 @@ impl TerminalView {
         let line = self.cmd.text();
         let len = line.chars().count();
         let cursor = self.cmd.cursor().min(len);
-        let mut text = escape_candidate(&cand.text);
+        let mut text = quote_for_shell(&cand.text, self.shell_program().as_deref());
         if cand.is_dir() {
             if !text.ends_with('/') {
                 text.push('/');
@@ -7055,11 +7028,10 @@ mod tests {
         staging_cache, staging_dir_is_safe, wsl_path, wsl_share_distro, wsl_share_path,
     };
     use super::{
-        description_budget, drag_scroll_step, elide, encode_mouse, escape_candidate,
-        expand_file_command_template, fallback_chain, fig_icon_emoji, fig_icon_glyph,
-        focus_report_bytes, highlight_runs, input_cells, input_char_positions,
-        input_overflow_shift, input_overlay_rows, menu_layout, paste_bytes, select_end_copy,
-        shell_escape_path, should_show_context_menu, smooth_scroll_step, submit_bytes,
+        description_budget, drag_scroll_step, elide, encode_mouse, expand_file_command_template,
+        fallback_chain, fig_icon_emoji, fig_icon_glyph, focus_report_bytes, highlight_runs,
+        input_cells, input_char_positions, input_overflow_shift, input_overlay_rows, menu_layout,
+        paste_bytes, select_end_copy, should_show_context_menu, smooth_scroll_step, submit_bytes,
         trim_trailing_spaces, wheel_route, wrapped_click_index,
     };
     use alacritty_terminal::term::TermMode;
@@ -8114,43 +8086,7 @@ mod tests {
     }
 
     #[test]
-    fn shell_escape_path_escapes_spaces_and_metachars() {
-        assert_eq!(
-            shell_escape_path("/Users/me/notes.txt"),
-            "/Users/me/notes.txt"
-        );
-        assert_eq!(
-            shell_escape_path("/Users/me/My File (1).txt"),
-            "/Users/me/My\\ File\\ \\(1\\).txt"
-        );
-        assert_eq!(
-            shell_escape_path("/a/$HOME & more"),
-            "/a/\\$HOME\\ \\&\\ more"
-        );
-        assert_eq!(shell_escape_path(""), "''");
-        assert_eq!(shell_escape_path("a\nb"), "'a\nb'");
-    }
-
-    #[test]
-    fn escape_candidate_quotes_what_the_shell_would_resplit() {
-        assert_eq!(escape_candidate("notes.txt"), "notes.txt");
-        assert_eq!(escape_candidate("--message"), "--message");
-        assert_eq!(escape_candidate("My Documents"), "My\\ Documents");
-        assert_eq!(escape_candidate("a(1)&b"), "a\\(1\\)\\&b");
-        assert_eq!(
-            escape_candidate("~/My Documents"),
-            "~/My\\ Documents",
-            "a leading ~/ is the user's own text and must stay expandable"
-        );
-        assert_eq!(
-            escape_candidate("~weird name"),
-            "\\~weird\\ name",
-            "a bare ~ that is not a home prefix is just a filename character"
-        );
-    }
-
-    #[test]
-    fn clipboard_paste_text_escapes_and_space_joins_files() {
+    fn clipboard_paste_text_quotes_and_space_joins_files() {
         let item = ClipboardItem {
             entries: vec![ClipboardEntry::ExternalPaths(ExternalPaths(
                 vec![
@@ -8161,12 +8097,15 @@ mod tests {
             ))],
         };
         assert_eq!(
-            clipboard_paste_text(&item).as_deref(),
-            Some("/Users/me/My\\ File.txt /tmp/b.log")
+            clipboard_paste_text(&item, Some("zsh")).as_deref(),
+            Some("'/Users/me/My File.txt' /tmp/b.log")
         );
 
         let text = ClipboardItem::new_string("echo hi".to_string());
-        assert_eq!(clipboard_paste_text(&text).as_deref(), Some("echo hi"));
+        assert_eq!(
+            clipboard_paste_text(&text, Some("zsh")).as_deref(),
+            Some("echo hi")
+        );
     }
 
     #[test]
@@ -9883,7 +9822,7 @@ mod gpui_tests {
     }
 
     #[gpui::test]
-    fn accepting_a_candidate_escapes_it_for_the_shell(cx: &mut TestAppContext) {
+    fn accepting_a_candidate_quotes_it_for_the_shell(cx: &mut TestAppContext) {
         crate::core::config::pin_test_config_dir();
         let (window, _daemon) = harness(cx);
         window
@@ -9892,13 +9831,17 @@ mod gpui_tests {
                 view.completion_insert(&dir_candidate("My Documents", 3, 5), 3);
                 assert_eq!(
                     view.cmd.text(),
-                    "cd My\\ Documents/",
-                    "an unescaped candidate resplits into two arguments and the command breaks"
+                    "cd 'My Documents'/",
+                    "an unquoted candidate resplits into two arguments and the command breaks"
                 );
 
                 view.cmd.set("cd ~/My");
                 view.completion_insert(&dir_candidate("~/My Documents", 3, 6), 3);
-                assert_eq!(view.cmd.text(), "cd ~/My\\ Documents/");
+                assert_eq!(
+                    view.cmd.text(),
+                    "cd ~/'My Documents'/",
+                    "the ~ stays outside the quotes so the shell still expands it"
+                );
 
                 view.cmd.set("git commit --mess");
                 view.completion_insert(
