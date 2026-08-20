@@ -1342,7 +1342,7 @@ impl Tty7App {
         };
         let this = entity.read(cx);
         let tab_count = this.tabs.len();
-        let cwd = this.tab_cwd(index, window, cx);
+        let cwd = this.tab_cwd_text(index, window, cx);
         let has_cwd = cwd.is_some();
         let mut menu = menu.min_w(px(200.));
 
@@ -1460,10 +1460,8 @@ impl Tty7App {
                 .action(Box::new(CopyWorkingDirectory))
                 .disabled(!has_cwd)
                 .on_click(move |_, _window, cx| {
-                    if let Some(cwd) = cwd.as_ref() {
-                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(
-                            cwd.display().to_string(),
-                        ));
+                    if let Some(text) = cwd.as_ref() {
+                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.clone()));
                     }
                 }),
         );
