@@ -293,6 +293,8 @@ l10n_keys! {
     SettingsGroupConnection,
     SettingsGroupSession,
     SettingsGroupSecurity,
+    SettingsRemoteClipboardWrite,
+    SettingsRemoteClipboardWriteDesc,
     SettingsIdentityFiles,
     SettingsIdentityFilesDesc,
     SettingsAgentForwarding,

@@ -980,6 +980,7 @@ pub(crate) struct SshProfileForm {
     x11: bool,
     skip_banner: bool,
     shell_integration: bool,
+    remote_clipboard_write: bool,
     verify_host_keys: Option<bool>,
     warn_on_close: Option<bool>,
 
@@ -1226,6 +1227,7 @@ pub(crate) struct SshFormDraft {
     warn_on_close: Option<bool>,
     skip_banner: bool,
     shell_integration: bool,
+    remote_clipboard_write: bool,
     login_scripts: String,
     x11: bool,
     kex: String,
@@ -1323,6 +1325,7 @@ fn validate_ssh_draft(draft: SshFormDraft, profiles: &[SshProfile]) -> (SshProfi
         warn_on_close: draft.warn_on_close,
         skip_banner: draft.skip_banner,
         shell_integration: draft.shell_integration,
+        remote_clipboard_write: draft.remote_clipboard_write,
         login_scripts: split_lines(&draft.login_scripts),
         x11: draft.x11,
         algorithms: Algorithms {
@@ -3684,6 +3687,7 @@ impl Tty7App {
             x11: profile.x11,
             skip_banner: profile.skip_banner,
             shell_integration: profile.shell_integration,
+            remote_clipboard_write: profile.remote_clipboard_write,
             verify_host_keys: profile.verify_host_keys,
             warn_on_close: profile.warn_on_close,
             test: None,
@@ -3729,6 +3733,7 @@ impl Tty7App {
             warn_on_close: form.warn_on_close,
             skip_banner: form.skip_banner,
             shell_integration: form.shell_integration,
+            remote_clipboard_write: form.remote_clipboard_write,
             login_scripts: raw(&form.login_scripts),
             x11: form.x11,
             kex: raw(&form.kex),
@@ -4993,6 +4998,22 @@ impl Tty7App {
                 ),
             )
             .child(self.subgroup_header(L10nKey::SettingsGroupSecurity, cx))
+            .child(
+                self.settings_row(
+                    t(L10nKey::SettingsRemoteClipboardWrite),
+                    t(L10nKey::SettingsRemoteClipboardWriteDesc),
+                    crate::ui::theme::switch("ssh-form-remote-clipboard-write", cx)
+                        .checked(form.remote_clipboard_write)
+                        .on_click(cx.listener(|this, on: &bool, _w, cx| {
+                            if let Some(f) = this.ssh_form_mut() {
+                                f.remote_clipboard_write = *on;
+                                cx.notify();
+                            }
+                        }))
+                        .into_any_element(),
+                    cx,
+                ),
+            )
             .child(self.settings_row(
                 t(L10nKey::SettingsVerifyHostKeys),
                 t_fmt(
