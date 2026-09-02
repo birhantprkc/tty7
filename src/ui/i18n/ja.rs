@@ -98,6 +98,10 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsUiFontSizeDesc => {
             "ターミナル以外すべての文字サイズ（タブ・パネル・設定）。Retina でないディスプレイでは大きめに"
         }
+        L10nKey::SettingsUiFontFamily => "インターフェースのフォントファミリー",
+        L10nKey::SettingsUiFontFamilyDesc => {
+            "タブ、サイドバー、ダイアログ、設定で使用するフォント。デフォルトではシステム UI フォントを使用します。"
+        }
         L10nKey::SettingsLineHeight => "行の高さ",
         L10nKey::SettingsLineHeightDesc => "フォントサイズに対する行間の倍率",
         L10nKey::SettingsFontFamily => "フォントファミリー",
@@ -839,6 +843,9 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsSearchKeybindingsTitle => "キーバインド",
         L10nKey::SettingsSearchLineHeightKeywords => {
             "タイポグラフィ リーディング 行間 line height typography leading spacing"
+        }
+        L10nKey::SettingsSearchUiFontFamilyKeywords => {
+            "インターフェース フォント ファミリー UI 書体 タブ サイドバー interface font family ui typeface"
         }
         L10nKey::SettingsSearchNewTabPositionKeywords => {
             "タブ 順序 末尾 現在のタブの隣 new tab position tabs order end after current"
@@ -1708,6 +1715,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::SwitcherStatusReconnecting => "再接続中…",
         L10nKey::SwitcherStatusTakenOver => "他のクライアントが使用中",
         L10nKey::SettingsFontDefault => "デフォルト（メインに合わせる）",
+        L10nKey::SettingsUiFontDefault => "デフォルト（システム UI フォント）",
         L10nKey::ForwardDescriptionPlaceholder => "用途",
         L10nKey::SettingsShellDefaultLoginShell => "あなたのログインシェル",
         L10nKey::SettingsShellDetected => "tty7 が見つけたシェル",
