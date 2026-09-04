@@ -34,7 +34,17 @@ use super::protocol::{MAX_FRAME, read_frame, write_frame};
 /// refusing to kill a server it has nothing to replace with — can be exercised
 /// against the v6 servers already deployed. A number is the only way to reach
 /// that path, and a mismatch nobody can reproduce is a mismatch nobody can fix.
-pub const CONTROL_VERSION: u32 = 7;
+///
+/// v8 adds the six project verbs (`TabSetProject`, `ProjectCreate`, `Rename`,
+/// `SetRoot`, `Move`, `Delete`) and the six `LayoutDelta` variants that ride
+/// back on `ControlEvent::Layout`. This first shipped behind a `projects`
+/// feature string instead, which was the v6 mistake in a new shape: a feature
+/// can gate what a client *sends*, so a v7 server never saw a verb it could not
+/// read, but nothing gates what a server *pushes* — a v7 client meeting a v8
+/// server that had grown a project took the delta, failed to decode the frame,
+/// and lost the link exactly as described above. Only the number can turn that
+/// pairing away at the handshake, which is why it is the number's job.
+pub const CONTROL_VERSION: u32 = 8;
 
 const DIALECT_MARKER: &str = "speaks control v";
 
@@ -123,7 +133,9 @@ pub use crate::host::{Entry, MTime, Meta, Output, SearchHit};
 
 pub use crate::core::shells::{DetectedShell, ShellInventory};
 
-pub use crate::core::machine::{Axis, LayoutDelta, Machine, PaneSeed, Side, Tab, TabId};
+pub use crate::core::machine::{
+    Axis, LayoutDelta, Machine, PaneSeed, Project, ProjectId, Side, Tab, TabId,
+};
 pub use crate::core::session::WorkspaceId;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -268,6 +280,35 @@ pub enum ControlRequest {
         tab: TabId,
         group: Option<String>,
     },
+    TabSetProject {
+        workspace: WorkspaceId,
+        tab: TabId,
+        project: Option<ProjectId>,
+    },
+    ProjectCreate {
+        workspace: WorkspaceId,
+        at: Option<u64>,
+        project: Project,
+    },
+    ProjectRename {
+        workspace: WorkspaceId,
+        project: ProjectId,
+        name: Option<String>,
+    },
+    ProjectSetRoot {
+        workspace: WorkspaceId,
+        project: ProjectId,
+        root: String,
+    },
+    ProjectMove {
+        workspace: WorkspaceId,
+        project: ProjectId,
+        to: u64,
+    },
+    ProjectDelete {
+        workspace: WorkspaceId,
+        project: ProjectId,
+    },
     PaneSplit {
         workspace: WorkspaceId,
         pane: u64,
@@ -365,6 +406,12 @@ impl ControlRequest {
             | TabRename { .. }
             | TabMove { .. }
             | TabSetGroup { .. }
+            | TabSetProject { .. }
+            | ProjectCreate { .. }
+            | ProjectRename { .. }
+            | ProjectSetRoot { .. }
+            | ProjectMove { .. }
+            | ProjectDelete { .. }
             | PaneSplit { .. }
             | PaneClose { .. }
             | PaneSetRatio { .. }

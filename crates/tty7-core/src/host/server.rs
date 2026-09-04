@@ -765,6 +765,64 @@ fn run_request(
                 .tab_set_group(workspace, tab, group, conn.machine_origin)?;
             (ReplyOk::Unit, Vec::new())
         }
+        ControlRequest::TabSetProject {
+            workspace,
+            tab,
+            project,
+        } => {
+            conn.machine()?
+                .tab_set_project(workspace, tab, project, conn.machine_origin)?;
+            (ReplyOk::Unit, Vec::new())
+        }
+        ControlRequest::ProjectCreate {
+            workspace,
+            at,
+            project,
+        } => {
+            conn.machine()?.project_create(
+                workspace,
+                at.map(clamp_usize),
+                project,
+                conn.machine_origin,
+            )?;
+            (ReplyOk::Unit, Vec::new())
+        }
+        ControlRequest::ProjectRename {
+            workspace,
+            project,
+            name,
+        } => {
+            conn.machine()?
+                .project_rename(workspace, project, name, conn.machine_origin)?;
+            (ReplyOk::Unit, Vec::new())
+        }
+        ControlRequest::ProjectSetRoot {
+            workspace,
+            project,
+            root,
+        } => {
+            conn.machine()?
+                .project_set_root(workspace, project, root, conn.machine_origin)?;
+            (ReplyOk::Unit, Vec::new())
+        }
+        ControlRequest::ProjectMove {
+            workspace,
+            project,
+            to,
+        } => {
+            conn.machine()?.project_move(
+                workspace,
+                project,
+                clamp_usize(to),
+                conn.machine_origin,
+            )?;
+            (ReplyOk::Unit, Vec::new())
+        }
+        ControlRequest::ProjectDelete { workspace, project } => {
+            conn.machine()?
+                .project_delete(workspace, project, conn.machine_origin)?;
+            (ReplyOk::Unit, Vec::new())
+        }
         ControlRequest::PaneSplit {
             workspace,
             pane,
