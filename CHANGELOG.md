@@ -5,7 +5,7 @@ All notable changes to tty7 are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [26.9.0] - 2026-09-04
 
 ### Added
 
@@ -99,6 +99,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prompt text (Codex, Copilot, Grok) are left out rather than drawn as a column
   of anonymous dots.
 
+
+- **The interface font is configurable** (#761). **Settings → Appearance →
+  Typography** now carries an interface font family beside the terminal one, so
+  the chrome can be set apart from — or matched to — what the panes are using.
+
+- **A coding agent's conversation gets an outline, and every turn is a jump
+  target** (#703). The right panel lists the turns it saw go by; clicking one
+  scrolls the pane back to where that turn started. A turn under a full-screen
+  agent has nothing to land in, and the row now says so on hover rather than
+  drawing a link that does nothing (#759).
+
+- **A remote workspace relinks its own dead panes** (#757). Panes whose SSH
+  route died come back on their own when the link returns, and the tabs are
+  named after what is actually running in them instead of keeping whatever the
+  snapshot said.
+
+- **Saved SSH hosts are one click from the New Tab button** (#647), and an SSH
+  pane names itself after its host, reaches the host form from wherever you
+  are, and can test a connection before you commit to it (#566).
+
+- **Nushell panes get OSC 7 cwd tracking and OSC 133 prompt marks** (#637), so
+  the sidebar follows a Nushell pane's directory and command marks work the way
+  they do under the other supported shells.
+
+- **The shell's own line editor owns the prompt** (#633). tty7 stops
+  second-guessing the line being edited and hands the row to zsh, fish, bash or
+  Nushell, which is what makes their completion, history search and multi-line
+  editing behave the way they do outside tty7.
+
+- **A tab whose cwd is not a repository groups by its folder** (#631) instead of
+  falling into an unsorted pile at the bottom of the sidebar.
+
+- **The wheel-zoom modifier is configurable** (#676) — for anyone whose mouse or
+  trackpad already spends Ctrl+wheel on something else.
+
+- **`tty7 server restart` replaces the server in place, keeping every session**
+  (#669). The old stop-and-start is still there behind `--hard` for when the
+  process really does have to go.
+
+- **Linux updates install in app** (#306, #652). A verified AppImage release is
+  downloaded, checked and swapped in without leaving tty7, the way macOS and
+  Windows already worked.
+
+- **An all-users Windows install updates through a single UAC prompt** (#562)
+  rather than one per file it has to replace.
+
+- **A file path printed by a program opens in tty7**, resolved on the host the
+  pane is actually on (#568) — a path from an SSH pane opens the remote file,
+  not a local one that happens to share its name.
+
+- **The workspace switcher is a flat list with a create form**, and connecting
+  to a machine syncs its workspaces at that moment rather than whenever the
+  next poll came round (#616).
+
+- **SFTP opens remote text files in the built-in editor** instead of handing
+  them to whatever the OS thought should have them.
+
+- **Hooks, resume and fork are wired for the CLI agents that support them**
+  (#666), and Kimi Code CLI is detected and driven like the rest (#694).
+
+- **Four dark themes** (#663).
+
+- **Closing the last window retires tty7 to the tray** rather than quitting it,
+  so the shells keep running and the next launch is instant (#639).
+
+- **A `tty7-server` build is published for macOS** (#605), so a Mac can host a
+  remote workspace and not only connect to one.
+
+- **↑ and Ctrl+P recall the last command that matches what is already typed**
+  (#768), instead of walking history from the end regardless of the prefix.
+
 ### Changed
 
 - **The Info panel's `agent` row is gone.** It said `Claude Code · working`
@@ -157,6 +228,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it has nothing to send, the same as a lone `send %83` always did. It fails
   loudly and never presses anything anywhere; to type a number as text, name
   the pane too (`tty7 send %5 83 --enter`) (#538).
+
+
+- **The seam between panes is lighter than the outline around a menu** (#771).
+  One hairline colour used to serve both, which made the sidebar, the right
+  panel and the document column read as boxes bolted together rather than one
+  surface. The two are derived the same way and floored differently now: a line
+  that is the only thing marking an edge keeps its weight, a line running
+  between two panes that already carry their own fills steps back.
+
+- **The app's copy is shorter** (#663). Settings descriptions, prompts and
+  notifications lost the sentences that were restating their own titles.
+
+- **`tty7 send` takes the bare pane id that `--json` prints** (#699), so an id
+  read out of one command can be pasted into the next without editing it.
+
+- **The control dialect is v6** (#605). A daemon left behind by an older build
+  is detected at launch and offered a restart instead of serving a window with
+  no tabs.
 
 ### Fixed
 
@@ -469,6 +558,144 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   used to fail into a logfile line and nothing else; the click now raises the
   same kind of toast a failed image upload does, naming the path and the
   error. (#542)
+
+
+- **A restart no longer asks a second time about a server that is already
+  gone** (#770). The record behind the "Restart Server?" prompt could only ever
+  accumulate: the control link re-armed it on every failed reconnect, including
+  in the seconds spent reading the dialog, so restarting fixed the daemon and
+  not the record and the next window asked again. A probe that finds the daemon
+  ours now clears it, on both the handoff and the stop-and-spawn paths, and a
+  verdict about a daemon that has since been replaced is dropped rather than
+  written.
+
+- **A split pane's cursor reflects which pane actually has focus** (#736) —
+  both cursors could render active at once, so neither said where typing would
+  land.
+
+- **The agent unread badge reads live focus** (#758), instead of clearing on a
+  pane that was merely visible.
+
+- **Clicking a sidebar row's change counts activates that row before opening
+  its diff** (#706, #729), so the diff that opens is the one whose numbers were
+  clicked.
+
+- **A window arriving at a workspace no longer claims to speak for panes it has
+  not read** (#716, #728) — the state that let a fresh window prune tabs it
+  knew nothing about.
+
+- **Every SSH channel tty7 abandons is closed before the server does it**
+  (#715, #727). Leaked channels accumulated over a long session until the
+  server's per-connection limit refused the next pane.
+
+- **A restored tab keeps its name** (#725). The title was left out of the
+  snapshot, so a tab restored after a restart came back labelled by its shell.
+
+- **An emoji that overflows its cell gets the room instead of being shaved
+  flat** (#707), and a regional-indicator pair is shaped as the one flag it is
+  rather than two letters (#686, #691).
+
+- **An orphan pane's Close button stays on screen** (#712) — the one control
+  that could clear it was the first thing to scroll away.
+
+- **A stalled remote link no longer blocks the UI thread** (#709). A server
+  that stopped answering froze the whole window rather than the one workspace
+  waiting on it.
+
+- **Windows paths are quoted correctly, "Checkout to…" is wired up, and the
+  Spawn reply is bounded** (#705).
+
+- **The input bar measures columns with `unicode-width`** (#704) instead of a
+  hand-rolled table that disagreed with the terminal beside it.
+
+- **A window that draws its own title bar is not framed again by the
+  compositor** (#679, #683) on Linux.
+
+- **Reveal and copy normalize path separators on Windows** (#680).
+
+- **The PTY gets back the Ctrl chords tty7 was eating** (#684), and Ctrl+V
+  reaches a full-screen program on the alternate screen instead of pasting over
+  it (#677, #682).
+
+- **A silent Attach fails instead of hanging, and a rebuild that cannot put the
+  tabs up holds them** (#673, #681) rather than dropping them on the floor.
+
+- **A daemon that lost both its names is still found and reaped** (#671), and
+  one lingering after quit-and-stop stays findable rather than stranding its
+  shells (#655).
+
+- **Hidden panes stop repainting the whole window** (#670) — a background tab
+  under a busy program cost the same frames as a visible one.
+
+- **The code editor keeps scrolled-out text off the line numbers**, and stops
+  painting its gutter and current line in the stock syntax theme's colours
+  (#636).
+
+- **Ctrl+W in the editor kills one path component at a time** (#658, #659).
+
+- **The sidebar's tab rows and workspace head resolve to a width** (#662)
+  instead of collapsing at certain panel sizes.
+
+- **A restored screen stays out of ConPTY's viewport on Windows, and Restart
+  Server no longer crashes the window** (#657).
+
+- **The SCM sync tile stays on the branch row at any panel width** (#650), a
+  branchless push is answered, and a refused commit says why (#545, #546,
+  #576).
+
+- **The SSH menu keeps a menu's shape** (#649), the password prompt's scrim
+  covers the whole window, and a failed reconnect names the machine (#645).
+
+- **The in-app notification is restyled to tty7's own visual language** (#646).
+
+- **A command that is over in a blink no longer flashes across the tab.**
+
+- **Settings gets its scroll range back**, and the scrollbar is held off the
+  window corner.
+
+- **A remote server stops cleanly on machines with no `/proc`**, and the install
+  shows on the strip (#627).
+
+- **A pane seeded by a window is recorded in that window's own mirror** (#628),
+  and a workspace switch no longer rereads the app mid-update (#618).
+
+- **A resize defers to the daemon's Size echo on remote routes too** (#632), so
+  a remote pane reflows once rather than twice.
+
+- **Shell integration is not injected into a zsh or fish the user gave
+  arguments to** (#629) — the case where injecting silently changed what the
+  shell was asked to do.
+
+- **The new-worktree prompt is a window-level modal** (#626).
+
+- **A deleted remote workspace is scrubbed from the listing snapshots** (#622).
+
+- **A server creation interrupted by an update is finished**, and the note that
+  answered it is retired.
+
+- **A new workspace keeps the name it was given** (#619).
+
+- **A dialect refusal has a way out instead of a retry loop** (#617).
+
+- **A window is told the name the machine gave the workspace it made** (#604,
+  #613).
+
+- **A Unix pwsh pane's title names the user, host and home** (#611).
+
+- **The right panel's tab icons redraw, and the tree glyph sits on the tile
+  ladder** (#578); the plus is drawn on the same optical bound as the rest of
+  the set (#577).
+
+- **The tab strip's status dot is ringed in white on dark themes.**
+
+- **`tty7 send --enter` presses the key it is shorthand for** (#581, #606).
+
+- **In-app updates check a Mach-O's signature by codesign's exit status**
+  (#696), and CI asserts every Mach-O in the macOS bundle is the architecture
+  it ships as (#687, #692).
+
+- **Nine UX fixes across the diff overlay, layout, settings and pane spawn**
+  (#623), and nineteen more low-severity ones (#584–#602, #615).
 
 ## [26.8.3] - 2026-08-12
 
