@@ -635,7 +635,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
             "tmux では、ペイン/タブの操作をプレフィックスキーの後に行います（例: Ctrl-B の後に C）"
         }
         L10nKey::SettingsPrefix => "プレフィックスキー",
-        L10nKey::SettingsPressKeys => "キーを入力…",
+        L10nKey::SettingsPressKeys => "キーを入力… · ⌫ でショートカットなし",
         L10nKey::SettingsPauseToSaveEsc => "一時停止して保存 · Esc",
         L10nKey::SettingsKeybindingsIntroDesc => {
             "ショートカットをクリックして新しいキーを押すと、少し間を置いて保存されます。Ctrl-B の後に X のようなシーケンスはキーを続けて入力。Esc でキャンセル、Backspace は最後のキーを削除し、最初に押すとデフォルトに戻します"

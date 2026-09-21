@@ -628,7 +628,7 @@ pub fn translate_en(key: L10nKey) -> &'static str {
             "tmux remaps pane/tab actions onto prefix sequences (e.g. Ctrl-B then C)."
         }
         L10nKey::SettingsPrefix => "Prefix",
-        L10nKey::SettingsPressKeys => "Press keys…",
+        L10nKey::SettingsPressKeys => "Press keys… · ⌫ for no shortcut",
         L10nKey::SettingsPauseToSaveEsc => "pause to save · Esc",
         L10nKey::SettingsKeybindingsIntroDesc => {
             "Click a shortcut, then press the new keys — it saves after a brief pause. Chain keys for a sequence like Ctrl-B then X. Esc cancels; Backspace removes the last key, or resets to default if pressed first."

@@ -7134,7 +7134,7 @@ impl Tty7App {
                     cx.notify();
                 } else {
                     self.stop_recording(cx);
-                    self.reset_keybinding(action, cx);
+                    self.unbind_keybinding(action, cx);
                 }
                 return;
             }
@@ -7249,6 +7249,34 @@ impl Tty7App {
         crate::ui::keymap::rebind(cx);
         if let Some(s) = self.active_settings_mut() {
             s.rebinding_note = note;
+        }
+        cx.notify();
+    }
+
+    /// Takes every chord off an action, and keeps it off.
+    ///
+    /// ⌫ on a row that has recorded nothing used to *reset* it — drop the
+    /// override so the action gets its shipped chord back. On a row nobody has
+    /// overridden, which is every row the first time it is looked at, that is a
+    /// no-op: someone pressing Backspace over Alt+1 to be rid of it watched
+    /// Alt+1 sit exactly where it was and read it as the default restoring
+    /// itself (#901). Nothing anywhere in the app said "this action should have
+    /// no key", though `config.json` has spelled it `[]` since #868.
+    ///
+    /// So ⌫ writes that empty list, and the **Reset** button beside the row —
+    /// which appears the moment an action is overridden, this way included — is
+    /// the way back to the default.
+    pub(crate) fn unbind_keybinding(&mut self, action: String, cx: &mut Context<Self>) {
+        self.update_config(cx, |cfg| {
+            cfg.keybindings.insert(
+                action,
+                crate::core::config::KeybindingOverride::Exact(Vec::new()),
+            );
+        });
+        crate::ui::keymap::rebind(cx);
+        if let Some(s) = self.active_settings_mut() {
+            s.recording = None;
+            s.rebinding_note = None;
         }
         cx.notify();
     }
@@ -10523,6 +10551,56 @@ mod keybinding_gpui_tests {
                 .is_some_and(|n| n.contains("Insert Newline")),
             "the takeover note must name the action that lost the chord (got {note:?})"
         );
+    }
+
+    /// #901, the half that happens in the UI: Alt+1…9 belongs to vim, and the
+    /// only gesture in the app that looks like "take this shortcut away" used
+    /// to *reset* the row instead — a no-op on a row nobody had overridden,
+    /// so the default appeared to restore itself however many times it was
+    /// pressed.
+    #[gpui::test]
+    fn backspace_on_a_row_unbinds_the_action_rather_than_restoring_its_default(
+        cx: &mut TestAppContext,
+    ) {
+        let (app, mut vcx) = harness(cx);
+        let shipped = vcx
+            .update(|_, cx| crate::ui::keymap::effective_key("ActivateTab1", cx))
+            .expect("Go to Tab 1 ships with a chord");
+
+        begin_capture(&app, &mut vcx, "ActivateTab1");
+        vcx.simulate_keystrokes("backspace");
+        wait_for_binding(&mut vcx, "ActivateTab1", serde_json::json!([]));
+
+        vcx.update(|_, cx| {
+            assert_eq!(
+                crate::ui::keymap::effective_key("ActivateTab1", cx),
+                None,
+                "the row has no chord left to show"
+            );
+            let typed = [gpui::Keystroke::parse(&shipped).expect("the chord parses")];
+            let context = [gpui::KeyContext::parse("Terminal").expect("the context parses")];
+            assert!(
+                cx.key_bindings()
+                    .borrow()
+                    .bindings_for_input(&typed, &context)
+                    .0
+                    .is_empty(),
+                "{shipped} must reach the terminal now, not the tab switcher"
+            );
+        });
+
+        // Reversible, and by the button that is already on the row: an
+        // overridden action — unbound counts — shows **Reset**.
+        app.update_in(&mut vcx, |app, _, cx| {
+            app.reset_keybinding("ActivateTab1".to_string(), cx)
+        });
+        vcx.update(|_, cx| {
+            assert_eq!(
+                crate::ui::keymap::effective_key("ActivateTab1", cx).as_deref(),
+                Some(shipped.as_str()),
+                "Reset is the way back to the shipped chord"
+            );
+        });
     }
 
     #[gpui::test]
