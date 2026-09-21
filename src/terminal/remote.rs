@@ -18,7 +18,7 @@ use std::collections::VecDeque;
 
 use crate::core::cli_agent::{AgentSessionState, AgentStatus, CLIAgent};
 use crate::core::config::CursorStyle as ConfigCursorStyle;
-use crate::core::osc::OscTokenizer;
+use crate::core::osc::{OscTokenizer, TitleEffect, TitleLifetime};
 use crate::daemon::protocol::{
     AuthPromptKind, AuthResponse, ClientMsg, DaemonMsg, KnownHostEntry, KnownHostId,
     LoopbackForward, LoopbackForwardRequest, ManagedForward, NativeSshSpec, PaneProcs,
@@ -1168,6 +1168,13 @@ impl RemoteTerminal {
                 let mut osc = OscNotifyScanner::default();
                 let mut mode_tok = OscTokenizer::new(&[b"133"]);
                 let mut zle_tok = OscTokenizer::new(&[b"133"]);
+                // #889: an OSC 0/2 the emulator above has already adopted, read
+                // a second time only to learn whether the program that wrote it
+                // has since exited. `TitleLifetime` is the daemon's rule too,
+                // so a window's tab strip and the switcher reading the tree can
+                // never disagree about whether a title is still current.
+                let mut title_tok = OscTokenizer::new(&[b"0", b"2", b"133"]);
+                let mut title_life = TitleLifetime::default();
                 let mut cursor_scan = ParkedCursorScanner::new();
                 let mut parked_cursor = ParkedCursorRepair::default();
                 let mut pending: Vec<u8> = buffered;
@@ -1215,6 +1222,25 @@ impl RemoteTerminal {
                 };
 
                 let mut out_batch: Vec<u8> = Vec::new();
+
+                // Whether this chunk ends with the title the pane is showing
+                // belonging to a command that has finished. The emulator has
+                // already parsed the same bytes, so a `true` here is sent on
+                // as a `ResetTitle` *after* every `Title` the chunk produced —
+                // which is the whole ordering question: a shell that re-titles
+                // itself in `precmd` writes its OSC 0/2 after the `D`, and
+                // that title is the last word rather than a thing to undo.
+                macro_rules! chunk_retires_the_title {
+                    ($bytes:expr) => {{
+                        let mut retire = false;
+                        title_tok.feed($bytes, |payload| match title_life.saw(payload) {
+                            TitleEffect::Retire => retire = true,
+                            TitleEffect::Set => retire = false,
+                            TitleEffect::None => {}
+                        });
+                        retire
+                    }};
+                }
 
                 'main: loop {
                     macro_rules! flush_batch {
@@ -1305,6 +1331,9 @@ impl RemoteTerminal {
                                         }
                                     }
                                 });
+                                if chunk_retires_the_title!(&out_batch) {
+                                    proxy.send_event(AlacEvent::ResetTitle);
+                                }
                                 proxy.send_event(AlacEvent::Wakeup);
                                 out_batch.clear();
                             }
@@ -1382,6 +1411,13 @@ impl RemoteTerminal {
                                     }
                                 });
                                 proxy.replaying.store(false, Ordering::Relaxed);
+                                // The replay carries the pane's recent marks,
+                                // so reading it is what lets a reattached
+                                // window know whether the title it just
+                                // adopted belongs to anything still running.
+                                if chunk_retires_the_title!(&bytes) {
+                                    proxy.send_event(AlacEvent::ResetTitle);
+                                }
                                 proxy.send_event(AlacEvent::Wakeup);
                             }
                             DaemonMsg::Output(bytes) => {
