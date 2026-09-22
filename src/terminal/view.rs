@@ -336,6 +336,10 @@ pub struct TerminalView {
     scroll_anim: Option<ScrollAnim>,
     scroll_anim_epoch: u64,
     gesture_until: Option<std::time::Instant>,
+    /// Whether the trackpad gesture in flight is zooming, latched at its first
+    /// event. `None` between gestures, and never set for a wheel, which has no
+    /// gesture to belong to and decides notch by notch.
+    gesture_zoom: Option<bool>,
     pub title: String,
     /// A title the pane has been told about but has not adopted yet — see
     /// `set_title_when_settled`. `None` means the tab is showing the newest
@@ -1579,6 +1583,7 @@ impl TerminalView {
             scroll_anim: None,
             scroll_anim_epoch: 0,
             gesture_until: None,
+            gesture_zoom: None,
             title: DEFAULT_TITLE.to_string(),
             pending_title: None,
             default_title: DEFAULT_TITLE.to_string(),
@@ -5469,12 +5474,31 @@ impl TerminalView {
     }
 
     fn on_scroll(&mut self, ev: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let gesturing = self.track_scroll_gesture(ev.touch_phase);
         // One modifier turns the wheel into a zoom, the way it does in a
         // browser. Which one is the user's to say, because the default is the
         // platform modifier and on macOS that is a key half the world is
         // already holding for something else (#668).
-        if zoom_wheel(cx.global::<Config>().mouse_zoom_modifier, &ev.modifiers) {
-            self.zoom_scroll(ev, window, cx);
+        let wants_zoom = zoom_wheel(cx.global::<Config>().mouse_zoom_modifier, &ev.modifiers);
+        // A trackpad gesture answers "scroll or zoom?" once, on its first
+        // event, and keeps that answer until the stream dies — momentum tail
+        // included. The tail is why: those events are the system's, not the
+        // hand's, yet each one is stamped with whatever modifiers happen to be
+        // down as it is delivered. Reaching for ⌘ during a flick's coast —
+        // ⌘-Tab, ⌘-C, anything — would otherwise turn hundreds of coasting
+        // lines into zoom steps and leave the font at its minimum, from a
+        // gesture that was never a zoom (#912).
+        let zoom = if gesturing {
+            *self.gesture_zoom.get_or_insert(wants_zoom)
+        } else {
+            self.gesture_zoom = None;
+            // Leftover travel belongs to the gesture that earned it; a new one
+            // must not start already part-way to a step.
+            self.zoom_debt = 0.;
+            wants_zoom
+        };
+        if zoom {
+            self.zoom_scroll(ev, gesturing, window, cx);
             return;
         }
         let mult = cx.global::<Config>().mouse_scroll_multiplier;
@@ -5483,7 +5507,6 @@ impl TerminalView {
             ScrollDelta::Pixels(p) => p.y.as_f32() / self.line_height.as_f32(),
         };
         let delta = raw * mult;
-        let gesturing = self.track_scroll_gesture(ev.touch_phase);
 
         let quantized = !ev.modifiers.shift && {
             let mode = *self.terminal.term.lock().mode();
@@ -5519,7 +5542,13 @@ impl TerminalView {
     /// asked for the wheel. Steps go out as the same actions the keyboard and
     /// the View menu send, so the min/max clamp and the saved setting live in
     /// one place — [`Tty7App::change_font_size`](crate::ui::app::Tty7App).
-    fn zoom_scroll(&mut self, ev: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn zoom_scroll(
+        &mut self,
+        ev: &ScrollWheelEvent,
+        gesturing: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // Whatever the scrollback still had in flight is dropped: it was
         // travelling in lines of a font that is about to change size.
         self.cancel_scroll_anim();
@@ -5527,7 +5556,6 @@ impl TerminalView {
             ScrollDelta::Lines(p) => p.y,
             ScrollDelta::Pixels(p) => p.y.as_f32() / self.line_height.as_f32(),
         };
-        let gesturing = self.track_scroll_gesture(ev.touch_phase);
         let (steps, debt) = zoom_scroll_steps(lines, self.zoom_debt, gesturing);
         self.zoom_debt = debt;
         for _ in 0..steps.unsigned_abs() {
@@ -13258,6 +13286,49 @@ mod gpui_tests {
                     view.scroll_anim.is_some(),
                     "the wheel never reached the scrollback"
                 );
+            })
+            .unwrap();
+    }
+
+    /// The bug this guards: a two-finger flick coasts long after the fingers
+    /// are gone, and every coasting event carries whatever modifiers are down
+    /// when it lands. Grabbing ⌘ for something else mid-coast used to read as
+    /// a zoom and run the font down to its minimum in a blink (#912).
+    #[gpui::test]
+    fn a_modifier_pressed_mid_flick_does_not_hijack_it_into_a_zoom(cx: &mut TestAppContext) {
+        let (window, _daemon) = harness(cx);
+        window
+            .update(cx, |view, w, cx| {
+                scroll_into_history(view, 10);
+                view.on_scroll(&wheel(view, -0.5, gpui::TouchPhase::Started), w, cx);
+                let before = display_offset(view);
+                // The tail, now stamped with ⌘ the hand reached for.
+                let mut tail = wheel(view, -3., gpui::TouchPhase::Moved);
+                tail.modifiers = Modifiers::secondary_key();
+                view.on_scroll(&tail, w, cx);
+                assert!(
+                    display_offset(view) != before || view.scroll_anim.is_some(),
+                    "the tail stayed a scroll, the way the gesture started"
+                );
+                assert_eq!(view.zoom_debt, 0., "and never paid into the zoom");
+            })
+            .unwrap();
+    }
+
+    /// The same latch the other way round: a zoom gesture that outlives the
+    /// modifier keeps zooming rather than dumping its tail into the buffer.
+    #[gpui::test]
+    fn a_zoom_gesture_keeps_zooming_after_the_modifier_is_released(cx: &mut TestAppContext) {
+        let (window, _daemon) = harness(cx);
+        window
+            .update(cx, |view, w, cx| {
+                scroll_into_history(view, 10);
+                let mut start = wheel(view, -0.5, gpui::TouchPhase::Started);
+                start.modifiers = Modifiers::secondary_key();
+                view.on_scroll(&start, w, cx);
+                view.on_scroll(&wheel(view, -0.5, gpui::TouchPhase::Moved), w, cx);
+                assert_eq!(display_offset(view), 10, "the grid never moved");
+                assert!(view.scroll_anim.is_none(), "and nothing was queued for it");
             })
             .unwrap();
     }
