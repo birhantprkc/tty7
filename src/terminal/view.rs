@@ -15934,6 +15934,127 @@ mod prompt_handover_tests {
         panic!("never settled: {what}");
     }
 
+    /// Bytes from the pane's pty, the way the daemon forwards them.
+    fn output(daemon: &mut Stream, bytes: &[u8]) {
+        DaemonMsg::Output(bytes.to_vec()).encode(daemon).unwrap();
+    }
+
+    /// Waits for the tab's reading of what the pane calls itself to become
+    /// `expect`, running out the wait a new title is held for on each pass.
+    fn titled(
+        cx: &mut TestAppContext,
+        window: &gpui::WindowHandle<TerminalView>,
+        expect: Option<&str>,
+    ) {
+        for _ in 0..300 {
+            cx.run_until_parked();
+            cx.executor().advance_clock(TITLE_SETTLE * 2);
+            cx.run_until_parked();
+            let showing = window
+                .update(cx, |view, _, _| view.stated_title().map(str::to_string))
+                .unwrap();
+            if showing.as_deref() == expect {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        panic!("the tab never came to read {expect:?}");
+    }
+
+    /// #889: a tab went on reading the name Claude Code had left on it long
+    /// after Claude exited and the pane was back at its own prompt in a real
+    /// directory. An OSC 0/2 had no end — only another OSC 0/2 replaced it —
+    /// so the last title any program wrote in a pane outlived it forever.
+    #[gpui::test]
+    fn a_title_a_command_set_is_retired_when_that_command_finishes(cx: &mut TestAppContext) {
+        let (window, mut daemon) = harness(cx);
+        output(&mut daemon, b"\x1b]133;A\x07\x1b]133;B\x07");
+        output(
+            &mut daemon,
+            b"\x1b]133;C;claude\x07\x1b]2;\xe2\x9c\xb3 fixing the switcher\x1b\\",
+        );
+        titled(cx, &window, Some("✳ fixing the switcher"));
+
+        // Claude exits and the shell reports the command finished. Nothing
+        // titles the pane after it, so the tab has to fall back down the
+        // label ladder — `stated_title` saying nothing is how it does that.
+        output(&mut daemon, b"\x1b]133;D;0\x07");
+        titled(cx, &window, None);
+    }
+
+    /// The two cases a title is *supposed* to outlive: a program that is still
+    /// running, and a shell that titles its own prompt (which it does between
+    /// the `D` and the `A`, so it is the last word rather than a thing undone).
+    #[gpui::test]
+    fn a_running_program_and_a_shells_own_prompt_title_both_keep_theirs(cx: &mut TestAppContext) {
+        let (window, mut daemon) = harness(cx);
+        output(
+            &mut daemon,
+            b"\x1b]133;C;vim\x07\x1b]2;vim \xe2\x80\x94 main.rs\x1b\\",
+        );
+        titled(cx, &window, Some("vim — main.rs"));
+
+        output(
+            &mut daemon,
+            b"\x1b]133;D;0\x07\x1b]0;me@box:~/dev\x07\x1b]133;A\x07\x1b]133;B\x07",
+        );
+        titled(cx, &window, Some("me@box:~/dev"));
+        settle(cx, &window, "the prompt is reading", |view| {
+            view.terminal.zle_reading()
+        });
+
+        // And that prompt title is nobody's command to retire. Both marks are
+        // chased by an edge the pane reports, so the assertion below cannot
+        // pass on bytes that have not landed yet.
+        output(&mut daemon, b"\x1b]133;C;ls\x07");
+        settle(cx, &window, "a command takes the pane", |view| {
+            !view.terminal.zle_reading()
+        });
+        output(&mut daemon, b"\x1b]133;D;0\x07\x1b]133;B\x07");
+        settle(cx, &window, "the prompt comes back", |view| {
+            view.terminal.zle_reading()
+        });
+        titled(cx, &window, Some("me@box:~/dev"));
+    }
+
+    /// #889 on a reattached window: a long session outran the daemon's replay
+    /// ring, so the replay carries the program's title but not the `C` that
+    /// started it. The replayed prompt state says a command owns the pane,
+    /// and that is enough to know the title is the command's to lose at `D`.
+    #[gpui::test]
+    fn a_reattached_window_retires_a_title_whose_c_rolled_out_of_the_replay(
+        cx: &mut TestAppContext,
+    ) {
+        crate::core::config::pin_test_config_dir();
+        cx.executor().allow_parking();
+        let (client_side, mut daemon) = test_stream_pair();
+        cx.update(|cx| {
+            gpui_component::init(cx);
+            cx.set_global(Config::default());
+        });
+        let window = cx.add_window(|window, cx| {
+            let terminal =
+                RemoteTerminal::from_stream_reattached(client_side, TermSize::new(80, 24))
+                    .expect("reattached link-backed terminal");
+            TerminalView::with_terminal(terminal, 1, window, cx)
+        });
+
+        DaemonMsg::Snapshot(b"\x1b]2;\xe2\x9c\xb3 fixing the switcher\x1b\\redraw".to_vec())
+            .encode(&mut daemon)
+            .unwrap();
+        DaemonMsg::Prompt {
+            active: true,
+            at_prompt: false,
+            last_exit: None,
+        }
+        .encode(&mut daemon)
+        .unwrap();
+        titled(cx, &window, Some("✳ fixing the switcher"));
+
+        output(&mut daemon, b"\x1b]133;D;0\x07");
+        titled(cx, &window, None);
+    }
+
     /// Printable text arrives the way the platform delivers it — through the
     /// text-input path, which is what the gap hold and the typeahead record see.
     fn type_text(window: &gpui::WindowHandle<TerminalView>, cx: &mut TestAppContext, text: &str) {
