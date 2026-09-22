@@ -127,7 +127,8 @@ jobs:
       # It runs here, on the debug build, rather than only at release time:
       # every machine that builds tty7 already has the redistributable, so
       # nothing else in the pipeline can notice the regression, and the
-      # dependency can come back from a single new `cc`-built dependency.
+      # dependency can come back from a single prebuilt native library or a stray
+      # RUSTFLAGS (`cc`-built code follows `+crt-static` on its own).
       # Named files rather than the target directory — build scripts and
       # proc-macro artifacts under it are host units, which are built without
       # the target's rustflags and legitimately import the CRT dynamically.
