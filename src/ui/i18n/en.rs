@@ -1769,7 +1769,7 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::AppMenuCopyWorkingDirectory => "Copy Working Directory",
         L10nKey::AppMenuCopySessionId => "Copy Session ID",
         L10nKey::AppMenuForkSession => "Fork Session",
-        L10nKey::AppMenuClosePaneTab => "Close Pane / Tab",
+        L10nKey::AppMenuClosePaneTab => "Close",
         L10nKey::AppMenuCloseOtherTabs => "Close Other Tabs",
         L10nKey::AppMenuCloseTabsRight => "Close Tabs to the Right",
         L10nKey::AppMenuReopenClosedTab => "Reopen Closed Tab",

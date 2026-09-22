@@ -1671,7 +1671,7 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::AppMenuCopyWorkingDirectory => "复制工作目录",
         L10nKey::AppMenuCopySessionId => "复制会话 ID",
         L10nKey::AppMenuForkSession => "Fork 会话",
-        L10nKey::AppMenuClosePaneTab => "关闭窗格 / 标签页",
+        L10nKey::AppMenuClosePaneTab => "关闭",
         L10nKey::AppMenuCloseOtherTabs => "关闭其他标签页",
         L10nKey::AppMenuCloseTabsRight => "关闭右侧标签页",
         L10nKey::AppMenuReopenClosedTab => "重新打开已关闭的标签页",

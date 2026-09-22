@@ -1846,7 +1846,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::AppMenuCopyWorkingDirectory => "作業ディレクトリをコピー",
         L10nKey::AppMenuCopySessionId => "セッション ID をコピー",
         L10nKey::AppMenuForkSession => "セッションをフォーク",
-        L10nKey::AppMenuClosePaneTab => "ペイン / タブを閉じる",
+        L10nKey::AppMenuClosePaneTab => "閉じる",
         L10nKey::AppMenuCloseOtherTabs => "他のタブを閉じる",
         L10nKey::AppMenuCloseTabsRight => "右側のタブを閉じる",
         L10nKey::AppMenuReopenClosedTab => "閉じたタブをもう一度開く",
