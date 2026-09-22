@@ -5488,13 +5488,20 @@ impl TerminalView {
         // ⌘-Tab, ⌘-C, anything — would otherwise turn hundreds of coasting
         // lines into zoom steps and leave the font at its minimum, from a
         // gesture that was never a zoom (#912).
-        let zoom = if gesturing {
-            *self.gesture_zoom.get_or_insert(wants_zoom)
-        } else {
+        // The answer is latched per gesture, not per stream: fingers going
+        // back down ask it again. Carrying it over would be the same bug
+        // wearing the other coat — one ⌘-zoom, and every later flick zooms
+        // with nothing held at all, because `Started` keeps the gesture live
+        // and would find the old answer still sitting there.
+        if !gesturing || matches!(ev.touch_phase, gpui::TouchPhase::Started) {
             self.gesture_zoom = None;
             // Leftover travel belongs to the gesture that earned it; a new one
             // must not start already part-way to a step.
             self.zoom_debt = 0.;
+        }
+        let zoom = if gesturing {
+            *self.gesture_zoom.get_or_insert(wants_zoom)
+        } else {
             wants_zoom
         };
         if zoom {
@@ -13329,6 +13336,30 @@ mod gpui_tests {
                 view.on_scroll(&wheel(view, -0.5, gpui::TouchPhase::Moved), w, cx);
                 assert_eq!(display_offset(view), 10, "the grid never moved");
                 assert!(view.scroll_anim.is_none(), "and nothing was queued for it");
+            })
+            .unwrap();
+    }
+
+    /// The latch is per gesture, not per stream: fingers going down again
+    /// start a fresh question. Carrying the last answer over would mean one
+    /// ⌘-zoom left every later flick zooming with no modifier held at all.
+    #[gpui::test]
+    fn a_new_gesture_is_not_bound_by_what_the_last_one_answered(cx: &mut TestAppContext) {
+        let (window, _daemon) = harness(cx);
+        window
+            .update(cx, |view, w, cx| {
+                scroll_into_history(view, 10);
+                let mut zoom = wheel(view, -0.5, gpui::TouchPhase::Started);
+                zoom.modifiers = Modifiers::secondary_key();
+                view.on_scroll(&zoom, w, cx);
+                assert_eq!(display_offset(view), 10, "that one was a zoom");
+                // Fingers down again, nothing held: a plain scroll.
+                view.on_scroll(&wheel(view, -3., gpui::TouchPhase::Started), w, cx);
+                assert_ne!(
+                    display_offset(view),
+                    10,
+                    "the new gesture asked the question again"
+                );
             })
             .unwrap();
     }
