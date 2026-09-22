@@ -1175,6 +1175,10 @@ impl RemoteTerminal {
                 // never disagree about whether a title is still current.
                 let mut title_tok = OscTokenizer::new(&[b"0", b"2", b"133"]);
                 let mut title_life = TitleLifetime::default();
+                // No live `Output` frame yet: whatever arrives now is the
+                // daemon's replay (an attach or a relink), which it sends
+                // entirely as `Snapshot`s followed by the stored state.
+                let mut replaying_state = true;
                 let mut cursor_scan = ParkedCursorScanner::new();
                 let mut parked_cursor = ParkedCursorRepair::default();
                 let mut pending: Vec<u8> = buffered;
@@ -1431,6 +1435,7 @@ impl RemoteTerminal {
                                 // agent it ran *later* reported for the first
                                 // time, and that report would be discounted.
                                 awaiting_replay = false;
+                                replaying_state = false;
                                 out_batch.extend_from_slice(&bytes);
                                 tr_frames += 1;
                             }
@@ -1539,6 +1544,14 @@ impl RemoteTerminal {
                                 last_exit,
                             } => {
                                 flush_batch!();
+                                // The replay says a command owns the pane
+                                // right now. If the ring it replayed had
+                                // already rolled past that command's `C`, the
+                                // title just adopted from it is the command's
+                                // and its `D` has to retire it (#889).
+                                if replaying_state && active && !at_prompt {
+                                    title_life.joined_mid_command();
+                                }
                                 if let Ok(mut guard) = shell.lock() {
                                     *guard = ShellState {
                                         active,

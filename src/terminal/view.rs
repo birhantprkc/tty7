@@ -16017,6 +16017,44 @@ mod prompt_handover_tests {
         titled(cx, &window, Some("me@box:~/dev"));
     }
 
+    /// #889 on a reattached window: a long session outran the daemon's replay
+    /// ring, so the replay carries the program's title but not the `C` that
+    /// started it. The replayed prompt state says a command owns the pane,
+    /// and that is enough to know the title is the command's to lose at `D`.
+    #[gpui::test]
+    fn a_reattached_window_retires_a_title_whose_c_rolled_out_of_the_replay(
+        cx: &mut TestAppContext,
+    ) {
+        crate::core::config::pin_test_config_dir();
+        cx.executor().allow_parking();
+        let (client_side, mut daemon) = test_stream_pair();
+        cx.update(|cx| {
+            gpui_component::init(cx);
+            cx.set_global(Config::default());
+        });
+        let window = cx.add_window(|window, cx| {
+            let terminal =
+                RemoteTerminal::from_stream_reattached(client_side, TermSize::new(80, 24))
+                    .expect("reattached link-backed terminal");
+            TerminalView::with_terminal(terminal, 1, window, cx)
+        });
+
+        DaemonMsg::Snapshot(b"\x1b]2;\xe2\x9c\xb3 fixing the switcher\x1b\\redraw".to_vec())
+            .encode(&mut daemon)
+            .unwrap();
+        DaemonMsg::Prompt {
+            active: true,
+            at_prompt: false,
+            last_exit: None,
+        }
+        .encode(&mut daemon)
+        .unwrap();
+        titled(cx, &window, Some("✳ fixing the switcher"));
+
+        output(&mut daemon, b"\x1b]133;D;0\x07");
+        titled(cx, &window, None);
+    }
+
     /// Printable text arrives the way the platform delivers it — through the
     /// text-input path, which is what the gap hold and the typeahead record see.
     fn type_text(window: &gpui::WindowHandle<TerminalView>, cx: &mut TestAppContext, text: &str) {
