@@ -1191,7 +1191,7 @@ fn default_ui_font_size() -> f32 {
 }
 
 fn default_sidebar_width() -> f32 {
-    220.0
+    260.0
 }
 
 pub const MAX_SCROLLBACK: usize = 100_000;
