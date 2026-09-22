@@ -841,28 +841,25 @@ impl Config {
     }
 
     pub fn save(&self) {
+        if let Err(error) = self.try_save() {
+            log::warn!("failed to save config: {error}");
+        }
+    }
+
+    /// Persist without hiding a failure from an interactive settings editor.
+    pub fn try_save(&self) -> std::io::Result<()> {
         if self.quarantined {
-            // The file this instance stands in for could not be read, so what
-            // the user wrote is still on disk — writing these defaults over it
-            // is the wholesale loss #537 is about. The fix is to repair the
-            // file; the next load that parses produces a writable config.
-            log::warn!("not saving over a config file that failed to load; fix or remove it first");
-            return;
+            return Err(std::io::Error::other(
+                "the existing configuration could not be read; repair it before saving",
+            ));
         }
-        let Some(path) = Self::path() else {
-            return;
-        };
+        let path = Self::path()
+            .ok_or_else(|| std::io::Error::other("configuration directory is unavailable"))?;
         if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            std::fs::create_dir_all(parent)?;
         }
-        match serde_json::to_string_pretty(self) {
-            Ok(text) => {
-                if let Err(e) = write_atomic(&path, text.as_bytes()) {
-                    log::warn!("failed to write config at {}: {e}", path.display());
-                }
-            }
-            Err(e) => log::warn!("failed to serialize config: {e}"),
-        }
+        let text = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
+        write_atomic(&path, text.as_bytes())
     }
 
     fn path() -> Option<PathBuf> {

@@ -2,6 +2,23 @@ use super::L10nKey;
 
 pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
     Some(match key {
+        L10nKey::SettingsNavGeneral => "一般",
+        L10nKey::SettingsEditShortcuts => "ショートカットを編集…",
+        L10nKey::SettingsModifiedOnly => "変更済みのみ",
+        L10nKey::SettingsModified => "変更済み",
+        L10nKey::SettingsResetValue => "既定値に戻す",
+        L10nKey::SettingsSearchResults => "検索結果",
+        L10nKey::SettingsOpenSetting => "設定を開く",
+        L10nKey::SettingsNoModified => "この条件に一致する変更済みの設定はありません。",
+        L10nKey::SettingsTerminalFontGroup => "ターミナルの文字",
+        L10nKey::SettingsInterfaceFontGroup => "インターフェイスの文字",
+        L10nKey::SettingsUnsavedTitle => "移動する前に変更を保存しますか？",
+        L10nKey::SettingsUnsavedBody => "変更を保存、破棄、または編集を続けられます。",
+        L10nKey::SettingsSaveChanges => "変更を保存",
+        L10nKey::SettingsThemeDraft => "テーマの変更は保存するまでプレビューされます。",
+        L10nKey::SettingsSaveError => "変更を保存できませんでした：{error}",
+        L10nKey::SettingsRetrySave => "保存を再試行",
+
         L10nKey::SearchTabs => "タブを検索…",
         L10nKey::SearchFiles => "ファイルを検索…",
         L10nKey::SearchThemes => "テーマを検索…",
@@ -75,11 +92,11 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::Keep => "保持",
         L10nKey::SettingsNavAppearance => "外観",
         L10nKey::SettingsNavTerminal => "ターミナル",
-        L10nKey::SettingsNavInput => "入力",
+        L10nKey::SettingsNavInput => "キーボードとマウス",
         L10nKey::SettingsNavSsh => "SSH",
-        L10nKey::SettingsNavAgents => "エージェント",
+        L10nKey::SettingsNavAgents => "連携",
         L10nKey::SettingsNavWindowTabs => "ウィンドウとタブ",
-        L10nKey::SettingsNavKeybindings => "キーバインド",
+        L10nKey::SettingsNavKeybindings => "キーボードショートカット",
         L10nKey::SettingsNavAbout => "情報",
         L10nKey::SettingsHeader => "設定",
         L10nKey::Reset => "リセット",
@@ -92,19 +109,19 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
             "配色テーマを選びます。明るいテーマと暗いテーマがあります"
         }
         L10nKey::SettingsTypography => "タイポグラフィ",
-        L10nKey::SettingsFontSize => "フォントサイズ",
+        L10nKey::SettingsFontSize => "ターミナルの文字サイズ",
         L10nKey::SettingsFontSizeDesc => "ターミナルテキストのサイズ（ピクセル）",
-        L10nKey::SettingsUiFontSize => "インターフェースのフォントサイズ",
+        L10nKey::SettingsUiFontSize => "画面の文字サイズ",
         L10nKey::SettingsUiFontSizeDesc => {
             "ターミナル以外すべての文字サイズ（タブ・パネル・設定）。Retina でないディスプレイでは大きめに"
         }
-        L10nKey::SettingsUiFontFamily => "インターフェースのフォントファミリー",
+        L10nKey::SettingsUiFontFamily => "画面のフォント",
         L10nKey::SettingsUiFontFamilyDesc => {
             "タブ、サイドバー、ダイアログ、設定で使用するフォント。デフォルトではシステム UI フォントを使用します。"
         }
         L10nKey::SettingsLineHeight => "行の高さ",
         L10nKey::SettingsLineHeightDesc => "フォントサイズに対する行間の倍率",
-        L10nKey::SettingsFontFamily => "フォントファミリー",
+        L10nKey::SettingsFontFamily => "ターミナルのフォント",
         L10nKey::SettingsFontFamilyDesc => "システムにインストールされているフォントから選択",
         L10nKey::SettingsBoldFont => "太字フォント",
         L10nKey::SettingsBoldFontDesc => {
@@ -394,18 +411,18 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsShellIntro => {
             "新しいターミナルで起動するプログラム。空欄ならプラットフォーム既定の {default} を使います"
         }
-        L10nKey::SettingsProgram => "プログラム",
+        L10nKey::SettingsProgram => "シェルプログラム",
         L10nKey::SettingsProgramDesc => {
             "PATH 上の実行可能ファイル名または絶対パス。例: zsh、fish、pwsh"
         }
-        L10nKey::SettingsArguments => "引数",
+        L10nKey::SettingsArguments => "シェル引数",
         L10nKey::SettingsArgumentsDesc => {
             "コマンドラインと同じ規則で分割される起動フラグ。空白を含むものはクォートしてください（例: -l、-c \"echo hi\"）"
         }
         L10nKey::SettingsArgumentsInvalid => {
             "引用符が対応していないため、この値は保存されませんでした"
         }
-        L10nKey::SettingsStartIn => "初期作業ディレクトリ",
+        L10nKey::SettingsStartIn => "開始ディレクトリ",
         L10nKey::SettingsStartInDesc => {
             "新しいシェルの開始場所: tty7 の起動ディレクトリ、ホームフォルダ、または固定パス"
         }
@@ -421,7 +438,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
             "継承元のないシェル（ウィンドウの最初のタブなど）に適用されます。新しいタブと分割はアクティブなペインのディレクトリを引き継ぎ、開いているシェルは動き続けます"
         }
         L10nKey::SettingsScrolling => "スクロール",
-        L10nKey::SettingsScrollback => "スクロールバック",
+        L10nKey::SettingsScrollback => "スクロールバックバッファー",
         L10nKey::SettingsScrollbackDesc => {
             "各ペインに保存する履歴の行数。新しいペインに適用されます"
         }
@@ -487,11 +504,11 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsBellModeVisual => "視覚的（画面点滅）",
         L10nKey::SettingsBellModeAudible => "音声（効果音）",
         L10nKey::SettingsBellModeBoth => "点滅 + 音声",
-        L10nKey::SettingsPrompt => "プロンプト",
+        L10nKey::SettingsPrompt => "プロンプトとコマンド履歴",
         L10nKey::SettingsPromptIntro => {
             "シェルプロンプトでの tty7 独自のエディターとメニュー。オフにするとその分がシェルに渡されます"
         }
-        L10nKey::SettingsPromptEditor => "プロンプトエディター",
+        L10nKey::SettingsPromptEditor => "tty7 のプロンプトエディター",
         L10nKey::SettingsPromptEditorDesc => {
             "シェルプロンプトで入力する行を tty7 が編集します — 選択、取り消し、下のメニュー。オフにするとシェル自身の行エディター（ZLE、readline、fish）に戻ります"
         }
@@ -502,7 +519,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsTabCompletionDesc => {
             "プロンプトで Tab を押すと tty7 の補完メニューが開きます。オフの場合、Tab はシェル自身の補完に渡されます"
         }
-        L10nKey::SettingsHistorySearch => "履歴検索",
+        L10nKey::SettingsHistorySearch => "コマンド履歴検索",
         L10nKey::SettingsHistorySearchDesc => {
             "プロンプトで ⌃R を押すと tty7 のファジー履歴メニューが開きます。オフなら ⌃R はシェルへ — 逆方向検索や、そこでバインドしたもの（fzf、percol）"
         }
@@ -599,9 +616,11 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsNotifyOnCommandFinishDesc => {
             "長時間のフォアグラウンドコマンドが完了したらデスクトップ通知を表示"
         }
-        L10nKey::SettingsNotifyThreshold => "通知閾値（秒）",
-        L10nKey::SettingsNotifyThresholdDesc => "「長時間」とみなすのに必要なコマンドの実行時間",
-        L10nKey::SettingsWindow => "ウィンドウ",
+        L10nKey::SettingsNotifyThreshold => "コマンド実行時間の下限",
+        L10nKey::SettingsNotifyThresholdDesc => {
+            "この時間以上実行されたコマンドの完了を通知します。"
+        }
+        L10nKey::SettingsWindow => "起動と復元",
         L10nKey::NotifyModeNever => "通知しない",
         L10nKey::NotifyModeUnfocused => "非フォーカス時のみ",
         L10nKey::NotifyModeAlways => "常に通知",
@@ -687,9 +706,9 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         }
         L10nKey::SettingsUpdateChannelStable => "安定版",
         L10nKey::SettingsUpdateChannelNightly => "ナイトリー",
-        L10nKey::SettingsDaemonStale => "バックグラウンドサーバーは {build} のままです。",
+        L10nKey::SettingsDaemonStale => "バックグラウンドセッションサービスは {build} のままです。",
         L10nKey::SettingsDaemonStaleDesc => {
-            "tty7 はその場で更新されました。アプリは新しく、ペインはまだ以前のビルドのサーバーが処理しています。再起動すると新しいビルドに切り替わり、ペインで動いているプロセスはすべて終了します。急ぐ必要はなく、ペインが空いているときにどうぞ"
+            "tty7 はその場で更新されました。アプリは新しく、ペインはまだ以前のビルドのセッションサービスが処理しています。再起動すると新しいビルドに切り替わり、ペインで動いているプロセスはすべて終了します。急ぐ必要はなく、ペインが空いているときにどうぞ"
         }
         L10nKey::UpdateDialogTitle => "アップデートがあります",
         L10nKey::UpdateDialogDetail => {
@@ -741,14 +760,14 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsCheckUpdatesOnLaunch => "起動時にアップデートを確認",
         L10nKey::SettingsCommandLine => "コマンドライン",
         L10nKey::SettingsCommandLineDesc => {
-            "同梱の tty7 コマンドを PATH に入れ、スクリプトやエージェントが任意のターミナルから tty7 を操作できるようにします（ペイン内ではどちらでも動きます）。自分でビルドした tty7 を優先したい場合はオフに。次回起動時に有効"
+            "付属の tty7 コマンドをスクリプトや AI エージェントから利用できます。次回起動時に反映されます。無効にしてもインストール済みのコマンドは削除されません。"
         }
         L10nKey::SettingsInstallCliOnPath => "`tty7` コマンドを PATH にインストール",
-        L10nKey::SettingsServer => "デーモンサーバー",
+        L10nKey::SettingsServer => "バックグラウンドセッションサービス",
         L10nKey::SettingsServerDesc => {
-            "シェルを動かし続けているバックグラウンドサーバーを再起動します。このコンピュータ上のすべてのシェルが終了し、タブとレイアウトは新しいシェルで開き直します"
+            "ターミナルセッションをバックグラウンドで維持します。再起動すると、このコンピューター上のすべてのシェルプロセスを終了し、新しいシェルでレイアウトを開き直します。"
         }
-        L10nKey::SettingsRestartServer => "サーバーを再起動…",
+        L10nKey::SettingsRestartServer => "セッションサービスを再起動…",
         L10nKey::SettingsAppHttpProxy => "アップデート用プロキシ",
         L10nKey::SettingsAppHttpProxyDesc => {
             "tty7 自身の更新チェックとダウンロードにのみ使用し、ペインで実行中のプログラムには影響しません。空欄ならシステムのプロキシに従います"
@@ -860,7 +879,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsSearchKeybindingsKeywords => {
             "ショートカット ホットキー キーボード バインディング コード tmux プリセット 再バインド プレフィックス keybindings shortcut hotkey binding chord prefix"
         }
-        L10nKey::SettingsSearchKeybindingsTitle => "キーバインド",
+        L10nKey::SettingsSearchKeybindingsTitle => "キーボードショートカット",
         L10nKey::SettingsSearchLineHeightKeywords => {
             "タイポグラフィ リーディング 行間 line height typography leading spacing"
         }
@@ -1760,7 +1779,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::Replace => "置き換える",
         L10nKey::SftpErrorInvalidOctalMode => "無効な 8 進数モードです",
         L10nKey::SettingsDaemonStaleDescInPlace => {
-            "tty7 はその場で更新されました。アプリは新しく、ペインはまだ前のビルドで動いています。サーバーは停止せずに新しいビルドへ置き換えられるので、シェルはそのまま引き継がれます。tty7 内蔵の SSH クライアントを使うペインだけは例外で、その接続は閉じられ、開き直しが必要です"
+            "tty7 はその場で更新されました。アプリは新しく、ペインはまだ前のビルドで動いています。セッションサービスは停止せずに新しいビルドへ置き換えられるので、シェルはそのまま引き継がれます。tty7 内蔵の SSH クライアントを使うペインだけは例外で、その接続は閉じられ、開き直しが必要です"
         }
         L10nKey::AppRestartServerBodyInPlace => {
             "サーバーは停止せずに自分自身をこのビルドへ置き換えます。シェルは動いたままで、ウィンドウはすぐに再接続します。tty7 内蔵の SSH クライアントを使うペインだけは例外で、その接続は閉じられ、開き直しが必要です"
@@ -1768,7 +1787,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::PaneRestoredScreenBanner => {
             "復元された画面 — 以下は新しいシェルで、これより上のものは動いていません"
         }
-        L10nKey::SettingsPerPaneHistory => "ペインごとに独自のシェル履歴を持たせる",
+        L10nKey::SettingsPerPaneHistory => "ペインごとにコマンド履歴を分離",
         L10nKey::SettingsPerPaneHistoryDescription => {
             "上キーでたどるのは、全ペインが混ざったものではなくこのペインで実行したコマンドです。新しいペインは既存の履歴から始まり、追加分は閉じるときに書き戻されます。対象は tty7 が設定できる bash と zsh のペインで、独自の引数で起動したシェルはそのままです"
         }
@@ -1854,7 +1873,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::AppMenuKeyboardShortcuts => "キーボードショートカット",
         L10nKey::AppMenuJoinDiscord => "Discord に参加",
         L10nKey::AppMenuReportIssue => "問題を報告…",
-        L10nKey::AppMenuRestartServer => "サーバーを再起動…",
+        L10nKey::AppMenuRestartServer => "セッションサービスを再起動…",
         L10nKey::WindowUntitled => "無題",
         L10nKey::TrayShowTty7 => "tty7 を表示",
         L10nKey::TrayNotifications => "通知",

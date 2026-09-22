@@ -2,6 +2,24 @@ use super::L10nKey;
 
 pub fn translate_en(key: L10nKey) -> &'static str {
     match key {
+        L10nKey::SettingsSaveError => "Changes could not be saved: {error}",
+        L10nKey::SettingsRetrySave => "Retry saving",
+
+        L10nKey::SettingsNavGeneral => "General",
+        L10nKey::SettingsEditShortcuts => "Edit shortcuts…",
+        L10nKey::SettingsModifiedOnly => "Modified only",
+        L10nKey::SettingsModified => "Modified",
+        L10nKey::SettingsResetValue => "Reset setting",
+        L10nKey::SettingsSearchResults => "Search results",
+        L10nKey::SettingsOpenSetting => "Open setting",
+        L10nKey::SettingsNoModified => "No modified settings match this filter.",
+        L10nKey::SettingsTerminalFontGroup => "Terminal text",
+        L10nKey::SettingsInterfaceFontGroup => "Interface text",
+        L10nKey::SettingsUnsavedTitle => "Save changes before leaving?",
+        L10nKey::SettingsUnsavedBody => "Save your changes, discard them, or continue editing.",
+        L10nKey::SettingsSaveChanges => "Save changes",
+        L10nKey::SettingsThemeDraft => "Theme changes are previewed until you save.",
+
         L10nKey::SearchTabs => "Search tabs…",
         L10nKey::SearchFiles => "Search files…",
         L10nKey::SearchThemes => "Search themes…",
@@ -71,11 +89,11 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::Keep => "Keep",
         L10nKey::SettingsNavAppearance => "Appearance",
         L10nKey::SettingsNavTerminal => "Terminal",
-        L10nKey::SettingsNavInput => "Input",
+        L10nKey::SettingsNavInput => "Keyboard & Mouse",
         L10nKey::SettingsNavSsh => "SSH",
-        L10nKey::SettingsNavAgents => "Agents",
+        L10nKey::SettingsNavAgents => "Integrations",
         L10nKey::SettingsNavWindowTabs => "Window & Tabs",
-        L10nKey::SettingsNavKeybindings => "Keybindings",
+        L10nKey::SettingsNavKeybindings => "Keyboard shortcuts",
         L10nKey::SettingsNavAbout => "About",
         L10nKey::SettingsHeader => "SETTINGS",
         L10nKey::Reset => "Reset",
@@ -88,20 +106,20 @@ pub fn translate_en(key: L10nKey) -> &'static str {
             "Pick a color theme. Each one sets its own light or dark look."
         }
         L10nKey::SettingsTypography => "Typography",
-        L10nKey::SettingsFontSize => "Font size",
+        L10nKey::SettingsFontSize => "Terminal font size",
         L10nKey::SettingsFontSizeDesc => "Terminal text size in pixels.",
         L10nKey::SettingsUiFontSize => "Interface font size",
         L10nKey::SettingsUiFontSizeDesc => {
             "Text size everywhere outside the terminal — tabs, panels and settings. \
              Raise it on a display that is not Retina."
         }
-        L10nKey::SettingsUiFontFamily => "Interface font family",
+        L10nKey::SettingsUiFontFamily => "Interface font",
         L10nKey::SettingsUiFontFamilyDesc => {
             "Face used for tabs, sidebars, dialogs and settings; Default uses the system UI font."
         }
         L10nKey::SettingsLineHeight => "Line height",
         L10nKey::SettingsLineHeightDesc => "Row spacing as a multiple of the font size.",
-        L10nKey::SettingsFontFamily => "Font family",
+        L10nKey::SettingsFontFamily => "Terminal font",
         L10nKey::SettingsFontFamilyDesc => "Pick from fonts installed on your system.",
         L10nKey::SettingsBoldFont => "Bold font",
         L10nKey::SettingsBoldFontDesc => {
@@ -387,18 +405,18 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::SettingsShellIntro => {
             "The program each new terminal launches. Leave Program empty to use the platform default ({default})."
         }
-        L10nKey::SettingsProgram => "Program",
+        L10nKey::SettingsProgram => "Shell program",
         L10nKey::SettingsProgramDesc => {
             "Executable name on PATH or an absolute path (e.g. zsh, fish, pwsh)."
         }
-        L10nKey::SettingsArguments => "Arguments",
+        L10nKey::SettingsArguments => "Shell arguments",
         L10nKey::SettingsArgumentsDesc => {
             "Launch flags, split like a command line — quote anything containing spaces (e.g. -l, or -c \"echo hi\")."
         }
         L10nKey::SettingsArgumentsInvalid => {
             "The quotes do not balance — this value was not saved."
         }
-        L10nKey::SettingsStartIn => "Start in",
+        L10nKey::SettingsStartIn => "Starting directory",
         L10nKey::SettingsStartInDesc => {
             "What a fresh shell starts in: tty7's launch directory, your home folder, or a fixed path."
         }
@@ -414,7 +432,7 @@ pub fn translate_en(key: L10nKey) -> &'static str {
             "Applies to shells with nothing to inherit, like a window's first tab. New tabs and splits still inherit the active pane's directory; open shells keep running."
         }
         L10nKey::SettingsScrolling => "Scrolling",
-        L10nKey::SettingsScrollback => "Scrollback",
+        L10nKey::SettingsScrollback => "Scrollback buffer",
         L10nKey::SettingsScrollbackDesc => "Lines of history kept per pane. Applies to new panes.",
         L10nKey::SettingsScrollSpeed => "Scroll speed",
         L10nKey::SettingsScrollSpeedDesc => "Multiplier applied to mouse-wheel scrolling.",
@@ -476,11 +494,11 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::SettingsBellModeVisual => "Visual",
         L10nKey::SettingsBellModeAudible => "Audible",
         L10nKey::SettingsBellModeBoth => "Both",
-        L10nKey::SettingsPrompt => "Prompt",
+        L10nKey::SettingsPrompt => "Prompt & command history",
         L10nKey::SettingsPromptIntro => {
             "tty7's own editor and menus at the shell prompt. Turn one off to hand that much back to the shell."
         }
-        L10nKey::SettingsPromptEditor => "Prompt editor",
+        L10nKey::SettingsPromptEditor => "tty7 prompt editor",
         L10nKey::SettingsPromptEditorDesc => {
             "tty7 edits the line you type at the shell prompt: selection, undo, and the menus below. Off hands the prompt back to the shell's own editor — ZLE, readline, fish."
         }
@@ -491,7 +509,7 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::SettingsTabCompletionDesc => {
             "Tab at the prompt opens tty7's completion menu. When off, Tab goes to the shell's own completion instead."
         }
-        L10nKey::SettingsHistorySearch => "History search",
+        L10nKey::SettingsHistorySearch => "Command history search",
         L10nKey::SettingsHistorySearchDesc => {
             "⌃R at the prompt opens tty7's fuzzy history menu. Off sends ⌃R to the shell — its own reverse-i-search, or whatever you bound there (fzf, percol)."
         }
@@ -590,11 +608,11 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::SettingsNotifyOnCommandFinishDesc => {
             "Desktop alert after a long foreground command completes."
         }
-        L10nKey::SettingsNotifyThreshold => "Notify threshold",
+        L10nKey::SettingsNotifyThreshold => "Minimum command duration",
         L10nKey::SettingsNotifyThresholdDesc => {
-            "How long a command must run to qualify as \"long\"."
+            "Notify only when a command runs for at least this long."
         }
-        L10nKey::SettingsWindow => "Window",
+        L10nKey::SettingsWindow => "Startup & restore",
         L10nKey::NotifyModeNever => "Never",
         L10nKey::NotifyModeUnfocused => "When unfocused",
         L10nKey::NotifyModeAlways => "Always",
@@ -678,9 +696,9 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         }
         L10nKey::SettingsUpdateChannelStable => "Stable",
         L10nKey::SettingsUpdateChannelNightly => "Nightly",
-        L10nKey::SettingsDaemonStale => "The background server is still running {build}.",
+        L10nKey::SettingsDaemonStale => "The background session service is still running {build}.",
         L10nKey::SettingsDaemonStaleDesc => {
-            "tty7 was updated in place: the app is new, your panes are still served by the old build. Restarting the server picks up the new one and ends everything running in your panes. No hurry — do it when they're idle."
+            "tty7 was updated in place: the app is new, your panes are still served by the old build. Restarting the session service picks up the new one and ends everything running in your panes. No hurry — do it when they're idle."
         }
         L10nKey::UpdateDialogTitle => "Update available",
         L10nKey::UpdateDialogDetail => {
@@ -732,14 +750,14 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::SettingsCheckUpdatesOnLaunch => "Check for updates on launch",
         L10nKey::SettingsCommandLine => "Command line",
         L10nKey::SettingsCommandLineDesc => {
-            "Put the bundled tty7 command on your PATH, so scripts and agents can drive tty7 from any terminal — inside a pane it works either way. Turn off to keep your own build unshadowed. Applies at next launch."
+            "Make the bundled tty7 command available to scripts and AI agents. Takes effect on the next launch; turning this off does not remove an existing installation."
         }
         L10nKey::SettingsInstallCliOnPath => "Install the tty7 command on PATH",
-        L10nKey::SettingsServer => "Server",
+        L10nKey::SettingsServer => "Background session service",
         L10nKey::SettingsServerDesc => {
-            "Restarts the background server that keeps your shells running. Every shell on this computer ends; your tabs and layout reopen with fresh ones."
+            "Keeps terminal sessions running in the background. Restarting ends all shell processes on this computer and reopens the layout with new shells."
         }
-        L10nKey::SettingsRestartServer => "Restart server…",
+        L10nKey::SettingsRestartServer => "Restart session service…",
         L10nKey::SettingsAppHttpProxy => "Proxy for updates",
         L10nKey::SettingsAppHttpProxyDesc => {
             "Used only for tty7's update checks and downloads, not for programs in your panes. Empty follows the system proxy."
@@ -823,7 +841,7 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::SettingsSearchKeybindingsKeywords => {
             "shortcut hotkey keyboard binding chord tmux preset rebind prefix"
         }
-        L10nKey::SettingsSearchKeybindingsTitle => "Keybindings",
+        L10nKey::SettingsSearchKeybindingsTitle => "Keyboard shortcuts",
         L10nKey::SettingsSearchLineHeightKeywords => "typography leading spacing",
         L10nKey::SettingsSearchUiFontFamilyKeywords => {
             "interface font family ui typeface typography chrome sidebar tab"
@@ -1687,7 +1705,7 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::Replace => "Replace",
         L10nKey::SftpErrorInvalidOctalMode => "invalid octal mode",
         L10nKey::SettingsDaemonStaleDescInPlace => {
-            "tty7 was updated in place: the app is new, your panes still run on the old build. The server can swap itself for the new one without stopping, so your shells carry straight over. Panes on tty7's built-in SSH client are the exception — those close and need reopening."
+            "tty7 was updated in place: the app is new, your panes still run on the old build. The session service can swap itself for the new one without stopping, so your shells carry straight over. Panes on tty7's built-in SSH client are the exception — those close and need reopening."
         }
         L10nKey::AppRestartServerBodyInPlace => {
             "The server swaps itself for this build in place: your shells keep running, and the window reconnects a moment later. Panes on tty7's built-in SSH client are the exception — those close and need reopening."
@@ -1695,7 +1713,7 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::PaneRestoredScreenBanner => {
             "restored screen — this shell is new, nothing above it is still running"
         }
-        L10nKey::SettingsPerPaneHistory => "Give each pane its own shell history",
+        L10nKey::SettingsPerPaneHistory => "Separate command history per pane",
         L10nKey::SettingsPerPaneHistoryDescription => {
             "Up walks through what you ran in this pane, not every pane interleaved. A new pane starts from your existing history and writes back what it adds when it closes. Applies to bash and zsh panes tty7 can set up; a shell started with your own arguments is left alone."
         }

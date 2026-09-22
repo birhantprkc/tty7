@@ -62,13 +62,30 @@ macro_rules! l10n_keys {
         pub enum L10nKey { $($key),* }
 
         impl L10nKey {
-            #[cfg(test)]
             pub(crate) const ALL: &'static [L10nKey] = &[$(L10nKey::$key),*];
         }
     };
 }
 
 l10n_keys! {
+    SettingsSaveError,
+    SettingsRetrySave,
+
+    SettingsNavGeneral,
+    SettingsEditShortcuts,
+    SettingsModifiedOnly,
+    SettingsModified,
+    SettingsResetValue,
+    SettingsSearchResults,
+    SettingsOpenSetting,
+    SettingsNoModified,
+    SettingsTerminalFontGroup,
+    SettingsInterfaceFontGroup,
+    SettingsUnsavedTitle,
+    SettingsUnsavedBody,
+    SettingsSaveChanges,
+    SettingsThemeDraft,
+
     SearchTabs,
     SearchFiles,
     SearchThemes,
@@ -1579,15 +1596,11 @@ mod tests {
             // and no locale renames either.
             L10nKey::PanelShell,
             L10nKey::PanelSsh,
-            // The zh copy calls the background process "server" throughout —
-            // this heading is that word on its own.
-            L10nKey::SettingsServer,
             // "Shell" and "Agent" are the words the Chinese- and
             // Japanese-speaking developer audience uses for these; a
             // translation here would be less clear, not more.
             L10nKey::SettingsShell,
             L10nKey::CmdGroupAgents,
-            L10nKey::SettingsNavAgents,
             L10nKey::SettingsAgentsIntro,
         ];
 

@@ -63,7 +63,7 @@ Native builds for macOS, Windows, and Linux on [**Releases**](https://github.com
 ## Supported agents
 
 **Detection** is free: brand avatar, branch + diff, tab title.
-**Status** takes one click under Settings → Agents to install that agent's hook,
+**Status** takes one click under Settings → Integrations to install that agent's hook,
 and brings the status dot, notifications, the tray icon, `tty7 wait`, and resume
 after a reboot. **Fork** needs both — the agent's own fork command, and the hook
 that tells tty7 which session to fork.
