@@ -62,7 +62,7 @@ macOS、Windows、Linux 的原生构建都在 [**Releases**](https://github.com/
 ## 支持的 agent
 
 **识别**无需配置：品牌头像、分支与 diff、标签页标题。
-**状态**需要在设置 → Agents 中为该 agent 安装 hook，一次点击，之后才有状态点、通知、托盘提醒、`tty7 wait` 和重启后恢复会话。
+**状态**需要在设置 → 集成 中为该 agent 安装 hook，一次点击，之后才有状态点、通知、托盘提醒、`tty7 wait` 和重启后恢复会话。
 **Fork** 两个条件都要：agent 自己提供 fork 命令，且 hook 已装——tty7 得知道 fork 的是哪个会话。
 
 <details>
