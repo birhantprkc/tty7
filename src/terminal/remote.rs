@@ -277,6 +277,24 @@ const MAX_BACKLOG: usize = 4 << 20;
 /// anyway.
 const DRAIN_GRACE: std::time::Duration = std::time::Duration::from_millis(50);
 
+/// How long a resize the daemon promised to echo is taken to still be on its
+/// way. Past this, a grid that has not reached the requested geometry is not
+/// waiting on anything: the request or its echo went missing, and the size is
+/// sent again. The local daemon echoes in well under a millisecond and a
+/// routed one within a round trip; a resend that beats a slow echo costs one
+/// `TIOCSWINSZ` of the size the pty already has, which signals nobody.
+const RESIZE_ECHO_GRACE: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Whether `term`'s grid is `size`, as the emulator would size it — it never
+/// goes below `MIN_COLUMNS` × `MIN_SCREEN_LINES`, so a sliver of a pane asking
+/// for one column is already as narrow as it can get.
+fn grid_holds(term: &Term<EventProxy>, size: TermSize) -> bool {
+    use alacritty_terminal::grid::Dimensions as _;
+    use alacritty_terminal::term::{MIN_COLUMNS, MIN_SCREEN_LINES};
+    term.columns() == size.cols.max(MIN_COLUMNS)
+        && term.screen_lines() == size.rows.max(MIN_SCREEN_LINES)
+}
+
 /// What the sender thread needs to report a link that stopped taking input.
 /// The signals the pane holds, cloned out so the failure can be raised from the
 /// thread that actually meets it.
@@ -556,6 +574,10 @@ pub struct RemoteTerminal {
     /// alongside `size` so a display-scale change still reaches the child even
     /// when the grid dimensions are unchanged.
     synced_cell: (u16, u16),
+    /// When the last `ClientMsg::Resize` went down the link. On an echoing
+    /// route it is what tells "the echo is still in flight" apart from "the
+    /// echo is never coming" — see [`RESIZE_ECHO_GRACE`].
+    resize_sent_at: Option<std::time::Instant>,
     link: LinkWriter,
     cwd: Arc<Mutex<Option<PathBuf>>>,
     shell_state: Arc<Mutex<ShellState>>,
@@ -1065,6 +1087,7 @@ impl RemoteTerminal {
             size,
             synced_size: false,
             synced_cell: (0, 0),
+            resize_sent_at: None,
             link,
             cwd,
             shell_state,
@@ -1777,15 +1800,32 @@ impl RemoteTerminal {
         // and leave a pixel-aware child rendering for the old framebuffer.
         let cell = (cell_w, cell_h);
         if self.synced_size && size == self.size && cell == self.synced_cell {
+            // Already asked for, so the only question is whether the grid got
+            // there. It is not enough to trust the request (#893): on an
+            // echoing route the grid moves only when the daemon's `Size` comes
+            // back, and a request or an echo that went missing left a pane
+            // painting a grid shorter than its bounds — the bottom rows blank,
+            // the child still drawing for the old size — with every later
+            // frame asking for the same size and being skipped here, until a
+            // divider drag asked for a different one.
             if echoed {
-                // The grid follows the daemon's Size echoes; disagreement here
-                // just means an echo is still in flight (or a replay segment is
-                // mid-apply), not that the request needs re-sending.
-                return;
-            }
-            use alacritty_terminal::grid::Dimensions as _;
-            let term = self.term.lock();
-            if term.columns() == size.cols && term.screen_lines() == size.rows {
+                // Disagreement while an echo can still be on its way is just
+                // the echo (or a replay segment mid-apply) not having landed
+                // yet. Asked first because it needs no lock.
+                if self
+                    .resize_sent_at
+                    .is_some_and(|at| at.elapsed() < RESIZE_ECHO_GRACE)
+                {
+                    return;
+                }
+                // Tried rather than waited for, as the painter does: this runs
+                // every frame, and a held lock is the reader mid-batch — the
+                // next frame asks again.
+                match self.term.try_lock_unfair() {
+                    Some(term) if !grid_holds(&term, size) => {}
+                    _ => return,
+                }
+            } else if grid_holds(&self.term.lock(), size) {
                 return;
             }
         }
@@ -1798,6 +1838,7 @@ impl RemoteTerminal {
 
         let win = win_size(size, cell_w, cell_h);
         self.link.send(ClientMsg::Resize(win));
+        self.resize_sent_at = Some(std::time::Instant::now());
     }
 
     pub fn foreground_cwd(&self) -> Option<PathBuf> {
@@ -5624,6 +5665,174 @@ mod tests {
         );
     }
 
+    /// A route whose daemon promised to echo every resize, over a socket pair
+    /// the test plays the daemon on. The switch tests build the same route
+    /// against a real pane.
+    fn echoing_pair() -> (RemoteTerminal, UnixStream) {
+        let (client_side, daemon_side) = UnixStream::pair().unwrap();
+        let mut term = RemoteTerminal::from_stream(client_side, TermSize::new(80, 24)).unwrap();
+        term.route = PaneRoute::Remote {
+            header: Box::new(crate::daemon::router::RouteHeader::wsl("Ubuntu-22.04")),
+            resize_echo: true,
+        };
+        daemon_side
+            .set_read_timeout(Some(std::time::Duration::from_millis(150)))
+            .unwrap();
+        (term, daemon_side)
+    }
+
+    /// The geometry of the next frame the pane sent, if it sent one at all.
+    fn next_resize(daemon_side: &mut UnixStream) -> Option<(u16, u16)> {
+        match ClientMsg::read(daemon_side) {
+            Ok(ClientMsg::Resize(ws)) => Some((ws.cols, ws.rows)),
+            Ok(other) => panic!("expected a Resize, got {other:?}"),
+            Err(_) => None,
+        }
+    }
+
+    /// Makes the last resize old enough that an echo for it is no longer
+    /// expected, without the test sitting out the grace for real.
+    fn outlive_the_echo_grace(term: &mut RemoteTerminal) {
+        term.resize_sent_at = std::time::Instant::now()
+            .checked_sub(RESIZE_ECHO_GRACE + std::time::Duration::from_millis(1));
+    }
+
+    fn wait_for_columns(term: &RemoteTerminal, cols: usize) {
+        use alacritty_terminal::grid::Dimensions as _;
+        for _ in 0..400 {
+            if term.term.lock().columns() == cols {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        panic!("the grid never reached {cols} columns");
+    }
+
+    /// #893: a pane came back from sleep or a workspace switch painting a grid
+    /// shorter than its bounds, and stayed that way until a divider drag. On an
+    /// echoing route the grid only moves when the daemon's `Size` comes back,
+    /// and the early-out trusted the request: once asked for, the same size
+    /// was never sent again, so a request or echo that went missing stranded
+    /// the grid — and the child — at the old geometry for good.
+    #[test]
+    fn an_echoed_resize_whose_echo_never_came_is_asked_for_again() {
+        use alacritty_terminal::grid::Dimensions as _;
+
+        let (mut term, mut daemon_side) = echoing_pair();
+        term.resize(TermSize::new(120, 30), 8, 17);
+        assert_eq!(next_resize(&mut daemon_side), Some((120, 30)));
+
+        // Every frame asks again. While the echo can still be on its way that
+        // is not a reason to resend.
+        term.resize(TermSize::new(120, 30), 8, 17);
+        assert_eq!(
+            next_resize(&mut daemon_side),
+            None,
+            "an echo still in flight must not be chased with duplicates"
+        );
+
+        // The echo never comes. Past the grace the grid is still 80x24, and
+        // the frame that notices must ask for the size again.
+        outlive_the_echo_grace(&mut term);
+        term.resize(TermSize::new(120, 30), 8, 17);
+        assert_eq!(
+            next_resize(&mut daemon_side),
+            Some((120, 30)),
+            "a resize whose echo never arrived was never retried, so the grid \
+             stays at the old size until the layout asks for a different one"
+        );
+        assert_eq!(
+            term.term.lock().columns(),
+            80,
+            "the retry still waits for the echo rather than reflowing early"
+        );
+
+        // Once the echo lands the size is settled, however old the request.
+        DaemonMsg::Size(WinSize {
+            cols: 120,
+            rows: 30,
+            cell_w: 8,
+            cell_h: 17,
+        })
+        .encode(&mut daemon_side)
+        .unwrap();
+        daemon_side.flush().unwrap();
+        wait_for_columns(&term, 120);
+        assert_eq!(term.term.lock().screen_lines(), 30);
+        outlive_the_echo_grace(&mut term);
+        term.resize(TermSize::new(120, 30), 8, 17);
+        assert_eq!(
+            next_resize(&mut daemon_side),
+            None,
+            "a grid that reached the requested size must not be resized again"
+        );
+    }
+
+    /// The other way the grid and the request can part on an echoing route: a
+    /// `Size` frame that lands after the echo moves the grid off the size the
+    /// layout asked for. The non-echoing path already re-asserts there
+    /// (`layout_resize_reasserts_geometry_after_a_late_size_frame`); the
+    /// echoing one skipped it, since the request itself had not changed.
+    #[test]
+    fn an_echoed_resize_reasserts_geometry_after_a_late_size_frame() {
+        let (mut term, mut daemon_side) = echoing_pair();
+        term.resize(TermSize::new(120, 30), 8, 17);
+        assert_eq!(next_resize(&mut daemon_side), Some((120, 30)));
+        for (cols, rows) in [(120, 30), (100, 12)] {
+            DaemonMsg::Size(WinSize {
+                cols,
+                rows,
+                cell_w: 8,
+                cell_h: 17,
+            })
+            .encode(&mut daemon_side)
+            .unwrap();
+        }
+        daemon_side.flush().unwrap();
+        wait_for_columns(&term, 100);
+
+        outlive_the_echo_grace(&mut term);
+        term.resize(TermSize::new(120, 30), 8, 17);
+        assert_eq!(
+            next_resize(&mut daemon_side),
+            Some((120, 30)),
+            "a grid knocked off the requested size was left there"
+        );
+    }
+
+    /// A relink re-sends the geometry the pane has now — including a resize
+    /// made after the old link had already died, which reached no daemon.
+    #[test]
+    fn a_relink_delivers_the_resize_made_while_the_link_was_down() {
+        crate::core::config::pin_test_config_dir();
+        let (old_client, mut old_daemon) = UnixStream::pair().unwrap();
+        let mut term = RemoteTerminal::from_stream(old_client, TermSize::new(80, 24)).unwrap();
+        term.resize(TermSize::new(100, 40), 8, 17);
+        assert!(matches!(
+            ClientMsg::read(&mut old_daemon).unwrap(),
+            ClientMsg::Resize(ws) if ws.cols == 100 && ws.rows == 40
+        ));
+
+        // The link drops; the layout keeps moving.
+        drop(old_daemon);
+        term.resize(TermSize::new(120, 30), 8, 17);
+
+        let (new_client, mut new_daemon) = UnixStream::pair().unwrap();
+        new_daemon
+            .set_read_timeout(Some(std::time::Duration::from_secs(3)))
+            .unwrap();
+        // What `relink_plan` hands the relink: the size the view has now.
+        let size = term.size();
+        term.adopt_relink(new_client, Vec::new(), &PaneRoute::Local, size, 8, 17)
+            .unwrap();
+        assert!(
+            matches!(
+                ClientMsg::read(&mut new_daemon).unwrap(),
+                ClientMsg::Resize(ws) if ws.cols == 120 && ws.rows == 30
+            ),
+            "the relinked daemon must be told the size the pane has now"
+        );
+    }
     #[test]
     fn a_remote_route_without_the_advertised_echo_reflows_at_request_time() {
         use alacritty_terminal::grid::Dimensions as _;
