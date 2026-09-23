@@ -21,7 +21,7 @@ use crate::ui::i18n::{L10nKey, t, t_fmt};
 use crate::ui::remote_connect::{self, HostChoice, RemoteWorkspaceRow};
 use crate::ui::remote_workspace::{ConnectFlow, MachineStatus, RemoteLinks};
 
-const CARD_W: f32 = 840.0;
+const CARD_W: f32 = 760.0;
 
 /// The create form's card. Narrower than the list — it is a form, not a
 /// browser.
@@ -30,27 +30,29 @@ const FORM_W: f32 = 480.0;
 /// The host dropdown shows about eight rows before it scrolls.
 const FORM_LIST_H: f32 = 8.5 * (ROW_H + 8.0);
 
-const LEFT_W: f32 = 340.0;
+const LEFT_W: f32 = 320.0;
 
 pub(crate) const CARD_TOP: f32 = 120.0;
 
 /// Breathing room the card keeps from the window edge, and the height its own
 /// search row and footer take on top of the body.
 const CARD_MARGIN: f32 = 24.0;
-const CARD_CHROME_H: f32 = 84.0;
+const SEARCH_H: f32 = 52.0;
+const FOOTER_H: f32 = 42.0;
+const CARD_CHROME_H: f32 = SEARCH_H + FOOTER_H + 2.0;
 
-const BODY_H: f32 = 420.0;
+const BODY_H: f32 = 360.0;
 
-const ROW_AVATAR: f32 = 20.0;
+const ROW_AVATAR: f32 = 24.0;
 
-const ROW_H: f32 = 32.0;
-const HOST_H: f32 = 34.0;
+const ROW_H: f32 = 34.0;
+const HOST_H: f32 = 32.0;
 
 const GUTTER: f32 = 26.0;
 
-const ICON: f32 = 16.0;
+const ICON: f32 = 14.0;
 
-const ROW_PAD: f32 = 8.0;
+const ROW_PAD: f32 = 10.0;
 
 /// `Failed` stays a unit variant so `Link` can be `Copy` and travel by value in
 /// `GroupRef`; what went wrong rides in `Group::error` instead.
@@ -1729,7 +1731,7 @@ impl Tty7App {
         let layout = self.switcher_layout(cx);
 
         let theme = cx.theme();
-        let (border, card_bg) = (theme.border, theme.popover);
+        let border = theme.border;
 
         let mut list = v_flex().gap(px(1.));
         for (at, &(g, r)) in layout.nav.iter().enumerate() {
@@ -1742,7 +1744,7 @@ impl Tty7App {
                 div()
                     .px(px(ROW_PAD))
                     .py(px(14.))
-                    .text_sm()
+                    .text_size(gpui::rems(13. / 16.))
                     .text_color(cx.theme().muted_foreground)
                     .child(t(L10nKey::SwitcherNoMatch)),
             );
@@ -1820,11 +1822,7 @@ impl Tty7App {
 
         v_flex()
             .w(px(card_w))
-            .bg(card_bg)
-            .border_1()
-            .border_color(border)
-            .rounded(px(10.))
-            .shadow_xl()
+            .map(|panel| crate::ui::theme::floating_surface(panel, cx))
             .overflow_hidden()
             .child(self.render_search(cx))
             .child(body)
@@ -1841,7 +1839,7 @@ impl Tty7App {
             .gap(px(8.))
             .pl(px(6. + ROW_PAD))
             .pr(px(12.))
-            .h(px(42.))
+            .h(px(SEARCH_H))
             .border_b_1()
             .border_color(border)
             .child(glyph_col(
@@ -1872,7 +1870,8 @@ impl Tty7App {
             .justify_between()
             .border_t_1()
             .border_color(border)
-            .p(px(6.))
+            .h(px(FOOTER_H))
+            .px(px(6.))
             .child(
                 h_flex()
                     .id("switcher-new-workspace")
@@ -1880,10 +1879,10 @@ impl Tty7App {
                     .gap(px(8.))
                     .h(px(ROW_H))
                     .px(px(ROW_PAD))
-                    .rounded(px(6.))
+                    .rounded(crate::ui::rounding::ROW_RADIUS)
                     .cursor_pointer()
                     .hover(move |r| r.bg(hover))
-                    .text_sm()
+                    .text_size(gpui::rems(13. / 16.))
                     .text_color(muted)
                     .child(glyph_col(
                         GUTTER,
@@ -1899,7 +1898,7 @@ impl Tty7App {
                     .items_center()
                     .gap(px(6.))
                     .pr(px(ROW_PAD))
-                    .text_xs()
+                    .text_size(gpui::rems(11. / 16.))
                     .text_color(muted)
                     .when(!holding && filtering, |hint| {
                         hint.child(t(L10nKey::SwitcherTabToCrossColumns))
@@ -1962,7 +1961,7 @@ impl Tty7App {
                         )
                         .child(
                             div()
-                                .text_xs()
+                                .text_size(gpui::rems(11. / 16.))
                                 .text_color(theme.muted_foreground)
                                 .truncate()
                                 .child(t_fmt(
@@ -1999,7 +1998,7 @@ impl Tty7App {
             .border_color(theme.danger.opacity(0.4))
             .child(
                 div()
-                    .text_xs()
+                    .text_size(gpui::rems(11. / 16.))
                     .text_color(theme.muted_foreground)
                     .child(shown),
             )
@@ -2148,7 +2147,7 @@ impl Tty7App {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_xs()
+                            .text_size(gpui::rems(11. / 16.))
                             .text_color(theme.foreground)
                             .child(line),
                     )
@@ -2176,12 +2175,12 @@ impl Tty7App {
             .mb(px(2.))
             .px(px(10.))
             .py(px(8.))
-            .rounded(px(6.))
+            .rounded(crate::ui::rounding::ROW_RADIUS)
             .border_1()
             .border_color(theme.border)
             .child(
                 div()
-                    .text_xs()
+                    .text_size(gpui::rems(11. / 16.))
                     .text_color(theme.muted_foreground)
                     .child(t(L10nKey::SwitcherOrphanPanes)),
             )
@@ -2205,7 +2204,7 @@ impl Tty7App {
             .border_color(theme.border)
             .child(
                 div()
-                    .text_xs()
+                    .text_size(gpui::rems(11. / 16.))
                     .text_color(theme.muted_foreground)
                     .child(format!(
                         "{} — {}",
@@ -2283,7 +2282,7 @@ impl Tty7App {
             .border_color(theme.border)
             .child(
                 div()
-                    .text_xs()
+                    .text_size(gpui::rems(11. / 16.))
                     .text_color(theme.muted_foreground)
                     .child(format!("{label} — {caption}")),
             )
@@ -2306,7 +2305,7 @@ impl Tty7App {
                 .items_center()
                 .h(px(ROW_H))
                 .px(px(ROW_PAD))
-                .rounded(px(6.))
+                .rounded(crate::ui::rounding::ROW_RADIUS)
                 .bg(hover_fill(cx))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .child(Input::new(input).appearance(false).xsmall())
@@ -2315,6 +2314,13 @@ impl Tty7App {
 
         let theme = cx.theme();
         let (fg, muted, warn) = (theme.foreground, theme.muted_foreground, theme.warning);
+        let fg = if picked {
+            gpui::rgb(0xffffff).into()
+        } else {
+            fg
+        };
+        let muted = if picked { fg } else { muted };
+        let warn = if picked { fg } else { warn };
         let sf = rungs(cx);
         let hover = gpui::rgb(sf.hover);
         let rref = RowRef::of(group, row);
@@ -2370,12 +2376,12 @@ impl Tty7App {
             .min_h(px(ROW_H))
             .py(px(4.))
             .px(px(ROW_PAD))
-            .rounded(px(6.))
+            .rounded(crate::ui::rounding::ROW_RADIUS)
             .overflow_hidden()
             .cursor_pointer()
-            .when(picked, |r| r.bg(gpui::rgb(sf.cursor)))
+            .when(picked, |r| r.bg(gpui::rgb(0x1768cf)))
             .anchor_scroll(self.switcher_anchor(Column::Left, picked))
-            .hover(move |r| r.bg(hover))
+            .hover(move |r| r.bg(if picked { gpui::rgb(0x1768cf) } else { hover }))
             .child(crate::ui::tab_strip::workspace_avatar(
                 &row.name, row.live, ROW_AVATAR, cx,
             ))
@@ -2387,7 +2393,7 @@ impl Tty7App {
                     .child(
                         div()
                             .truncate()
-                            .text_sm()
+                            .text_size(gpui::rems(13. / 16.))
                             .when(row.current, |d| d.font_weight(gpui::FontWeight::MEDIUM))
                             .text_color(match unlit {
                                 true => muted,
@@ -2400,7 +2406,7 @@ impl Tty7App {
                             .items_center()
                             .gap(px(5.))
                             .min_w_0()
-                            .text_xs()
+                            .text_size(gpui::rems(11. / 16.))
                             .text_color(muted)
                             .child(match host_dot {
                                 Some(color) => div()
@@ -2454,7 +2460,7 @@ impl Tty7App {
             .children(badge.map(|(label, _here)| {
                 div()
                     .flex_shrink_0()
-                    .text_xs()
+                    .text_size(gpui::rems(11. / 16.))
                     .text_color(match row.preempted {
                         true => warn,
                         false => muted,
@@ -2524,10 +2530,10 @@ impl Tty7App {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let theme = cx.theme();
-        let (border, card_bg) = (theme.border, theme.popover);
+        let border = theme.border;
         let (fg, muted) = (theme.foreground, theme.muted_foreground);
         let sf = rungs(cx);
-        let (hover, picked_bg) = (gpui::rgb(sf.hover), gpui::rgb(sf.cursor));
+        let (hover, picked_bg) = (gpui::rgb(sf.hover), gpui::rgb(0x1768cf));
         let viewport = window.viewport_size();
         let card_w = FORM_W
             .min(viewport.width.as_f32() - 2. * CARD_MARGIN)
@@ -2549,7 +2555,7 @@ impl Tty7App {
         let header = h_flex()
             .items_center()
             .gap(px(6.))
-            .h(px(42.))
+            .h(px(SEARCH_H))
             .px(px(8.))
             .border_b_1()
             .border_color(border)
@@ -2567,7 +2573,7 @@ impl Tty7App {
             )
             .child(
                 div()
-                    .text_sm()
+                    .text_size(gpui::rems(13. / 16.))
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(fg)
                     .child(t(L10nKey::AppMenuNewWorkspace)),
@@ -2577,7 +2583,7 @@ impl Tty7App {
             div()
                 .w(px(52.))
                 .flex_shrink_0()
-                .text_sm()
+                .text_size(gpui::rems(13. / 16.))
                 .text_color(muted)
                 .child(text)
         };
@@ -2589,7 +2595,7 @@ impl Tty7App {
                 .gap(px(6.))
                 .px(px(8.))
                 .h(px(30.))
-                .rounded(px(6.))
+                .rounded(crate::ui::rounding::ROW_RADIUS)
                 .border_1()
                 .border_color(border)
         };
@@ -2633,7 +2639,7 @@ impl Tty7App {
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_sm()
+                        .text_size(gpui::rems(13. / 16.))
                         .text_color(fg)
                         .child(chosen_label),
                 )
@@ -2658,6 +2664,12 @@ impl Tty7App {
             let mut list = v_flex().gap(px(1.)).p(px(4.));
             for (i, item) in items.iter().enumerate() {
                 let picked = i == form.sel;
+                let fg = if picked {
+                    gpui::rgb(0xffffff).into()
+                } else {
+                    fg
+                };
+                let muted = if picked { fg } else { muted };
                 let base = h_flex()
                     .id(("switcher-form-item", i))
                     .items_center()
@@ -2665,11 +2677,11 @@ impl Tty7App {
                     .min_h(px(ROW_H))
                     .py(px(4.))
                     .px(px(ROW_PAD))
-                    .rounded(px(6.))
+                    .rounded(crate::ui::rounding::ROW_RADIUS)
                     .overflow_hidden()
                     .cursor_pointer()
                     .when(picked, |r| r.bg(picked_bg))
-                    .hover(move |r| r.bg(hover))
+                    .hover(move |r| r.bg(if picked { picked_bg } else { hover }))
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.switcher_form_pick(i, window, cx);
                     }));
@@ -2681,7 +2693,7 @@ impl Tty7App {
                                 .flex_1()
                                 .min_w_0()
                                 .truncate()
-                                .text_sm()
+                                .text_size(gpui::rems(13. / 16.))
                                 .text_color(fg)
                                 .child(t(L10nKey::SwitcherThisComputer)),
                         )
@@ -2701,7 +2713,7 @@ impl Tty7App {
                                 .flex_shrink_0()
                                 .max_w(px(180.))
                                 .truncate()
-                                .text_sm()
+                                .text_size(gpui::rems(13. / 16.))
                                 .text_color(fg)
                                 .child(host.label.clone()),
                         )
@@ -2710,7 +2722,7 @@ impl Tty7App {
                                 .flex_1()
                                 .min_w_0()
                                 .truncate()
-                                .text_xs()
+                                .text_size(gpui::rems(11. / 16.))
                                 .text_color(muted)
                                 .child(host.detail.clone()),
                         )
@@ -2723,7 +2735,7 @@ impl Tty7App {
                         .child(Icon::new(IconName::Plus).size(px(14.)).text_color(muted))
                         .child(
                             div()
-                                .text_sm()
+                                .text_size(gpui::rems(13. / 16.))
                                 .text_color(muted)
                                 .child(t(L10nKey::AddSshHost)),
                         )
@@ -2732,13 +2744,17 @@ impl Tty7App {
                 list = list.child(line);
             }
             host_block = host_block.child(
-                div().rounded(px(6.)).border_1().border_color(border).child(
-                    div()
-                        .id("switcher-form-hosts")
-                        .max_h(px(FORM_LIST_H))
-                        .overflow_y_scroll()
-                        .child(list),
-                ),
+                div()
+                    .rounded(crate::ui::rounding::ROW_RADIUS)
+                    .border_1()
+                    .border_color(border)
+                    .child(
+                        div()
+                            .id("switcher-form-hosts")
+                            .max_h(px(FORM_LIST_H))
+                            .overflow_y_scroll()
+                            .child(list),
+                    ),
             );
         }
 
@@ -2759,7 +2775,7 @@ impl Tty7App {
             .py(px(8.))
             .border_t_1()
             .border_color(border)
-            .text_xs()
+            .text_size(gpui::rems(11. / 16.))
             .text_color(muted)
             .child(match form.open {
                 true => t(L10nKey::SwitcherFormPickHint),
@@ -2768,11 +2784,7 @@ impl Tty7App {
 
         v_flex()
             .w(px(card_w))
-            .bg(card_bg)
-            .border_1()
-            .border_color(border)
-            .rounded(px(10.))
-            .shadow_xl()
+            .map(|panel| crate::ui::theme::floating_surface(panel, cx))
             .overflow_hidden()
             .child(header)
             .child(
@@ -2805,7 +2817,7 @@ impl Tty7App {
             div()
                 .px(px(ROW_PAD))
                 .py(px(14.))
-                .text_sm()
+                .text_size(gpui::rems(13. / 16.))
                 .text_color(muted)
                 .child(text)
                 .into_any_element()
@@ -2835,7 +2847,7 @@ impl Tty7App {
         }
 
         let sf = rungs(cx);
-        let (hover, picked_bg) = (gpui::rgb(sf.hover), gpui::rgb(sf.cursor));
+        let (hover, picked_bg) = (gpui::rgb(sf.hover), gpui::rgb(0x1768cf));
         let right_sel = self.switcher.as_ref().map(|sw| sw.right_sel).unwrap_or(0);
         let holding = self.switcher.as_ref().is_some_and(|sw| sw.hold.is_some());
         let ws = row.id;
@@ -2851,14 +2863,14 @@ impl Tty7App {
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_xs()
+                        .text_size(gpui::rems(11. / 16.))
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .text_color(muted)
                         .child(row.name.clone()),
                 )
                 .child(
                     div()
-                        .text_xs()
+                        .text_size(gpui::rems(11. / 16.))
                         .text_color(muted)
                         .child(match row.tabs.len() {
                             1 => t(L10nKey::SwitcherTabCountOne).to_string(),
@@ -2870,6 +2882,14 @@ impl Tty7App {
         for (nth, i) in hits.iter().enumerate() {
             let tab = &row.tabs[*i];
             let picked = nth == right_sel && column == Column::Right;
+            let fg = if picked {
+                gpui::rgb(0xffffff).into()
+            } else {
+                fg
+            };
+            let muted = if picked { fg } else { muted };
+            let added_ink = if picked { fg } else { added_ink };
+            let removed_ink = if picked { fg } else { removed_ink };
             let (id, index) = (tab.id, tab.index);
             // The second line is what tells two tabs on the same repo apart —
             // the branch, then the diff counts, mirroring the tab sidebar.
@@ -2877,7 +2897,7 @@ impl Tty7App {
                 h_flex()
                     .items_center()
                     .gap(px(5.))
-                    .text_xs()
+                    .text_size(gpui::rems(11. / 16.))
                     .text_color(muted)
                     .child(
                         gpui::svg()
@@ -2908,7 +2928,7 @@ impl Tty7App {
                 Some(line) => Some(line.into_any_element()),
                 None if tab.named && !tab.path.is_empty() => Some(
                     div()
-                        .text_xs()
+                        .text_size(gpui::rems(11. / 16.))
                         .truncate()
                         .text_color(muted)
                         .child(tab.path.clone())
@@ -2925,12 +2945,12 @@ impl Tty7App {
                     .min_h(px(ROW_H))
                     .py(px(4.))
                     .px(px(ROW_PAD))
-                    .rounded(px(6.))
+                    .rounded(crate::ui::rounding::ROW_RADIUS)
                     .overflow_hidden()
                     .cursor_pointer()
                     .when(picked, |r| r.bg(picked_bg))
                     .anchor_scroll(self.switcher_anchor(Column::Right, picked))
-                    .hover(move |r| r.bg(hover))
+                    .hover(move |r| r.bg(if picked { picked_bg } else { hover }))
                     .child(self.tab_avatar(
                         ("switcher-avatar", index),
                         tab.agent,
@@ -2948,7 +2968,7 @@ impl Tty7App {
                             .child(
                                 div()
                                     .truncate()
-                                    .text_sm()
+                                    .text_size(gpui::rems(13. / 16.))
                                     .when(tab.active, |d| d.font_weight(gpui::FontWeight::MEDIUM))
                                     .text_color(fg)
                                     .child(tab.label.clone()),
@@ -2959,7 +2979,7 @@ impl Tty7App {
                         r.child(
                             div()
                                 .flex_shrink_0()
-                                .text_xs()
+                                .text_size(gpui::rems(11. / 16.))
                                 .text_color(muted)
                                 .child(t(L10nKey::SwitcherActiveTab)),
                         )
@@ -4141,9 +4161,12 @@ mod gpui_tests {
             // The search row is the first thing in the card; both columns
             // start below it.
             Spot::Search => (100., 20.),
-            Spot::Workspaces => (20., 60.),
+            Spot::Workspaces => (20., super::SEARCH_H + 16.),
             // Past the tab column's own header row, onto its first tab.
-            Spot::Tabs => (left_w + 40., 42. + 6. + super::HOST_H + super::ROW_H / 2.),
+            Spot::Tabs => (
+                left_w + 40.,
+                super::SEARCH_H + 6. + super::HOST_H + super::ROW_H / 2.,
+            ),
         };
         point(px(card_left + dx), px(super::CARD_TOP + dy))
     }

@@ -130,11 +130,24 @@ struct SettingsColumns {
 /// nothing is not a `min_w` the row cannot honour — a floor a flex row cannot
 /// meet does not push back, it overflows, and overflow here means content
 /// painted off the edge of the window, which is the other half of this bug.
+#[cfg(test)]
 fn settings_columns(
     section: SettingsSection,
     theme_panel_open: bool,
     viewport: f32,
 ) -> SettingsColumns {
+    settings_columns_scaled(section, theme_panel_open, viewport, 1.)
+}
+
+fn settings_columns_scaled(
+    section: SettingsSection,
+    theme_panel_open: bool,
+    viewport: f32,
+    scale: f32,
+) -> SettingsColumns {
+    // Reserve the same readable label width when the interface font grows.
+    let nav_width = NAV_W * scale.max(1.);
+    let nav_floor = NAV_W_MIN * scale.max(1.);
     let ssh = matches!(section, SettingsSection::Ssh);
     // The panel belongs to Appearance; a stale open flag on any other page is
     // not a column, the same way `render_settings` does not draw one.
@@ -147,14 +160,14 @@ fn settings_columns(
     // column — this is the one place the *floor* is the test, because the panel
     // leaving the row is what buys the page its preferred width back.
     let panel_overlays =
-        theme_panel_open && viewport - NAV_W_MIN - THEME_PANEL_W_MIN - PAGE_PAD < CONTENT_MIN_W;
+        theme_panel_open && viewport - nav_floor - THEME_PANEL_W_MIN - PAGE_PAD < CONTENT_MIN_W;
     let beside = theme_panel_open && !panel_overlays;
 
-    let mut nav = NAV_W;
+    let mut nav = nav_width;
     let mut ssh_list = only_when(ssh, SSH_LIST_W);
     let mut theme_panel = only_when(beside, THEME_PANEL_W);
     let (nav_slack, list_slack, panel_slack) = (
-        NAV_W - NAV_W_MIN,
+        nav_width - nav_floor,
         only_when(ssh, SSH_LIST_W - SSH_LIST_W_MIN),
         only_when(beside, THEME_PANEL_W - THEME_PANEL_W_MIN),
     );
@@ -193,7 +206,7 @@ fn settings_row_width(
     viewport: f32,
     ui_scale: f32,
 ) -> f32 {
-    let cols = settings_columns(section, theme_panel_open, viewport);
+    let cols = settings_columns_scaled(section, theme_panel_open, viewport, ui_scale);
     let panel = only_when(!cols.panel_overlays, cols.theme_panel);
     match section {
         SettingsSection::Ssh => (viewport - cols.nav - cols.ssh_list - SSH_DETAIL_PAD).max(0.),
@@ -2355,11 +2368,11 @@ impl Tty7App {
             let path = format!("{} › {}", t(entry.section.title()), t(title));
             let row = v_flex()
                 .id(SharedString::from(format!("search-result-{title:?}")))
-                .px_3()
-                .py_2()
-                .rounded_lg()
+                .px_4()
+                .py_3()
+                .rounded(rounding::CARD_RADIUS)
                 .border_1()
-                .border_color(cx.theme().border)
+                .border_color(cx.theme().border.opacity(0.65))
                 .anchor_scroll(
                     self.active_settings()
                         .filter(|s| s.search_selection == index)
@@ -2506,7 +2519,7 @@ impl Tty7App {
         let viewport_w = window.viewport_size().width.as_f32();
         let ui_scale = ui_scale(cx);
         self.settings_viewport_w.set(viewport_w);
-        let cols = settings_columns(layout_section, show_theme_panel, viewport_w);
+        let cols = settings_columns_scaled(layout_section, show_theme_panel, viewport_w, ui_scale);
         self.settings_row_width.set(settings_row_width(
             layout_section,
             show_theme_panel,
@@ -2577,7 +2590,7 @@ impl Tty7App {
 
         let nav_body = SettingsSection::ALL
             .into_iter()
-            .fold(SidebarMenu::new(), |menu, target| {
+            .fold(SidebarMenu::new().gap_2(), |menu, target| {
                 menu.child(nav_item(t(target.title()), target, target.icon()))
             });
 
@@ -3040,7 +3053,7 @@ impl Tty7App {
     /// The column widths this render settled on. `settings_columns` is pure and
     /// cheap, so the two pages that draw chrome of their own work them out
     /// again rather than have the answer threaded through every builder.
-    fn settings_columns_now(&self) -> SettingsColumns {
+    fn settings_columns_now(&self, cx: &App) -> SettingsColumns {
         let (section, panel_open) = match self.active_settings() {
             Some(s) => (
                 s.section,
@@ -3048,7 +3061,12 @@ impl Tty7App {
             ),
             None => (SettingsSection::Appearance, false),
         };
-        settings_columns(section, panel_open, self.settings_viewport_w.get())
+        settings_columns_scaled(
+            section,
+            panel_open,
+            self.settings_viewport_w.get(),
+            ui_scale(cx),
+        )
     }
 
     /// Whether the row measured this render came out narrower than a threshold
@@ -3205,7 +3223,7 @@ impl Tty7App {
         // description, which then ran out past the row on every wide page.
         let stacked = self.settings_row_under(STACK_ROW_BELOW, cx);
         let labels = v_flex()
-            .gap_0p5()
+            .gap_1()
             .min_w_0()
             .when(gated, |col| col.opacity(0.45))
             .child(
@@ -3261,10 +3279,10 @@ impl Tty7App {
             .when(!stacked, |row| {
                 row.flex_row().items_center().justify_between().gap_8()
             })
-            .py_2()
-            .px_2p5()
-            .mx_neg_2p5()
-            .rounded_lg()
+            .py_3()
+            .px_3()
+            .mx_neg_3()
+            .rounded(rounding::CARD_RADIUS)
             .when(hit, |row| row.bg(theme.accent))
             // Only the first hit on the page carries the anchor: it is the one
             // the page scrolls to, and a later row claiming it would drag the
@@ -4049,7 +4067,7 @@ impl Tty7App {
             .child(
                 v_flex()
                     .flex_shrink_0()
-                    .w(px(self.settings_columns_now().ssh_list))
+                    .w(px(self.settings_columns_now(cx).ssh_list))
                     .h_full()
                     .border_r_1()
                     .border_color(border)
@@ -8243,7 +8261,7 @@ impl Tty7App {
         }
 
         v_flex()
-            .w(px(self.settings_columns_now().theme_panel))
+            .w(px(self.settings_columns_now(cx).theme_panel))
             .h_full()
             .flex_shrink_0()
             .bg(bg)
@@ -9433,6 +9451,22 @@ mod tests {
     /// The row keeps its side-by-side shape while both halves fit, and stacks
     /// once they do not. The SSH page reaches that point first — it spends its
     /// host list before the row gets anything.
+    #[test]
+    fn enlarged_settings_text_gets_room_in_the_navigation() {
+        for scale in [1.25, 1.5] {
+            let columns = settings_columns_scaled(SettingsSection::Appearance, false, 1440., scale);
+            assert!(columns.nav >= NAV_W_MIN * scale);
+            let row = settings_row_width(SettingsSection::Appearance, false, 1440., scale);
+            assert!(row >= STACK_ROW_BELOW * scale);
+            let with_picker =
+                settings_columns_scaled(SettingsSection::Appearance, true, 720., scale);
+            assert!(
+                with_picker.panel_overlays,
+                "the picker must not squeeze enlarged labels"
+            );
+        }
+    }
+
     #[test]
     fn a_row_stacks_once_its_label_and_control_stop_fitting() {
         use SettingsSection::*;

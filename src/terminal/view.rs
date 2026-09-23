@@ -7295,7 +7295,7 @@ impl Render for TerminalView {
                     None => menu,
                 };
                 let menu = menu
-                    .min_w(px(220.))
+                    .min_w(px(240.))
                     .action_context(menu_focus.clone())
                     .menu_element_with_disabled(
                         Box::new(CopyText),
