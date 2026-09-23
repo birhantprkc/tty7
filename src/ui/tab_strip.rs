@@ -543,10 +543,17 @@ pub(crate) fn chrome_tile_variant(cx: &gpui::App) -> ButtonCustomVariant {
 pub(crate) fn chrome_tile_variant_for(selected: bool, cx: &gpui::App) -> ButtonCustomVariant {
     ButtonCustomVariant::new(cx)
         .color(cx.theme().transparent)
+        // Resting chrome is *not* body ink. `sidebar_foreground` is the rung a
+        // tab title is written at, so a toolbar drawn in it made the two
+        // controls at the top of the rail the darkest marks in the whole
+        // sidebar — louder than the twenty rows they exist to act on, which is
+        // the opposite of how a native sidebar ranks itself. One rung down puts
+        // them level with the workspace chip beside them, and the hover fill
+        // this variant already carries is what answers the pointer.
         .foreground(if selected {
             cx.theme().foreground
         } else {
-            cx.theme().sidebar_foreground
+            cx.theme().muted_foreground
         })
         // `sidebar_accent` is the surface's *selected* step, and it was handed
         // to hover as well — so a hovered tile wore the fill of a selected one
@@ -1309,22 +1316,14 @@ impl Tty7App {
         size: f32,
         cx: &App,
     ) -> gpui::AnyElement {
-        // The wrapper positions; the disc below carries the radius.
+        // The wrapper positions; the slot below centres the mark in it.
         // `status_dot` hangs itself off the edge with negative offsets — that
         // overhang is what makes it a badge on the avatar rather than a notch
-        // in it — and as a child of the rounded element the overhang was
-        // clipped along the arc, leaving a crescent.
+        // in it — so nothing here may clip its own children.
         let base = div().id(id).flex_shrink_0().relative().size(px(size));
-        // Fill, hairline and mark all live here, so the radius only ever clips
-        // the disc's own paint.
-        let disc = || {
-            div()
-                .size(px(size))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded_full()
-        };
+        // The mark is the whole avatar now, so the slot is only ever geometry:
+        // it holds the column's width whatever the glyph inside it is.
+        let slot = || div().size(px(size)).flex().items_center().justify_center();
         match agent {
             Some(agent) => {
                 let hollow = status == Some(crate::core::cli_agent::AgentStatus::Waiting);
@@ -1337,14 +1336,22 @@ impl Tty7App {
                     Some(state) => format!("{} — {state}", agent.display_name()),
                     None => agent.display_name().to_string(),
                 };
-                // Identity is carried by the mark; saturated colour is reserved
-                // for the small liveness/status badge, not a column of brands.
+                // Hue says *who*, the dot says *what it wants*. Both readings
+                // are worth having down a column of twenty rows, and a filled
+                // brand disc took the first at the price of the second: a
+                // saturated circle on every row is three times the coloured
+                // area of the badge that is actually about state, and the eye
+                // goes to area. Painting the mark itself keeps the hue — and
+                // the marks are silhouettes, so this is the shape either way.
                 base.child(
-                    disc().bg(cx.theme().secondary).child(
+                    slot().child(
                         gpui::svg()
                             .path(agent.icon_path())
-                            .size(px(size * 0.54))
-                            .text_color(cx.theme().sidebar_foreground),
+                            .size(px(size * 0.72))
+                            .text_color(crate::ui::presets::mark_ink(
+                                agent.accent_rgb(),
+                                cx.theme().background,
+                            )),
                     ),
                 )
                 .when_some(dot, |b, dot| b.child(dot))
@@ -1353,13 +1360,15 @@ impl Tty7App {
                 })
                 .into_any_element()
             }
+            // A shell is the absence of an agent, and it reads as one: no hue
+            // to spend, and quieter than the marks it shares the column with.
             None => base
                 .child(
-                    disc().bg(cx.theme().muted).child(
+                    slot().child(
                         gpui::svg()
                             .path("icons/terminal.svg")
-                            .size(px(size * 0.70))
-                            .text_color(cx.theme().foreground.opacity(0.65)),
+                            .size(px(size * 0.72))
+                            .text_color(cx.theme().muted_foreground),
                     ),
                 )
                 .when_some(ssh, |b, rgb| {
@@ -2427,20 +2436,34 @@ mod tests {
     }
 
     #[test]
-    fn a_brand_disc_that_matches_the_window_gets_an_edge() {
-        use crate::ui::presets::needs_edge;
+    fn a_brand_mark_keeps_its_hue_and_stays_visible() {
+        use crate::ui::presets::mark_ink;
         let dark: gpui::Hsla = gpui::rgb(0x111111).into();
         let light: gpui::Hsla = gpui::rgb(0xffffff).into();
         let codex = crate::core::cli_agent::CLIAgent::Codex.accent_rgb();
         let claude = crate::core::cli_agent::CLIAgent::Claude.accent_rgb();
 
-        assert_eq!(codex, 0x000000, "Codex's disc is pure black");
+        // The hue is the identity: it survives both ends of the theme range,
+        // or the mark stops saying which agent this is.
+        let seed: gpui::Hsla = gpui::rgb(claude).into();
+        for surface in [dark, light] {
+            let ink = mark_ink(claude, surface);
+            assert!(
+                (ink.h - seed.h).abs() < 0.02 && ink.s > 0.3,
+                "Claude's mark went grey on {surface:?}"
+            );
+        }
+
+        // Codex is pure black, which is the window fill on a dark theme. With
+        // no disc under it, an unlifted mark is not a mark.
+        assert_eq!(codex, 0x000000, "Codex's brand colour is pure black");
         assert!(
-            needs_edge(codex, dark),
-            "a black disc on a dark window is not a disc"
+            mark_ink(codex, dark).l > dark.l + 0.25,
+            "a black mark on a dark window is not there"
         );
-        assert!(!needs_edge(codex, light));
-        assert!(!needs_edge(claude, dark) && !needs_edge(claude, light));
+        // And it is only lifted where it has to be: on a light window black
+        // is the brand, and stays it.
+        assert_eq!(mark_ink(codex, light).l, 0.0);
     }
 
     #[test]
