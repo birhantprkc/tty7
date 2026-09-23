@@ -832,8 +832,10 @@ pub(crate) fn apply_theme(mut window: Option<&mut Window>, cx: &mut App) {
     t.shadow = false;
 
     let sidebar_bg = Hsla::from(rgb(m.sidebar));
-    let (navigation_fill, navigation_ink) = theme.navigation_colors();
-    let sidebar_sel = rgb(navigation_fill);
+    // The current tab is a place, not an action: a neutral step of the rail's
+    // own ladder plus a heavier title, never the accent. Blue is left to the
+    // things that can be pressed.
+    let sidebar_sel = rgb(surfaces.sidebar.selected);
     // `t.sidebar` stays the opaque theme token: the settings theme picker
     // paints with it on top of the (opaque) settings overlay, so diluting
     // it would wash out that panel. The workspace sidebar/right-panel
@@ -847,7 +849,7 @@ pub(crate) fn apply_theme(mut window: Option<&mut Window>, cx: &mut App) {
     t.sidebar_foreground = rgb(surfaces.sidebar.text_resting).into();
     t.sidebar_accent = sidebar_sel.into();
     t.tokens.sidebar_accent = Hsla::from(sidebar_sel).into();
-    t.sidebar_accent_foreground = rgb(navigation_ink).into();
+    t.sidebar_accent_foreground = rgb(surfaces.sidebar.text_selected).into();
 
     t.list.active_highlight = true;
     t.list_active = rgb(interaction.choice).into();
