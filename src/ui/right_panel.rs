@@ -81,7 +81,7 @@ pub(crate) const ROW_GLYPH: f32 = crate::ui::app::TILE_GLYPH;
 /// in one tab because every tab of this panel is the same list of rows seen
 /// from a different angle, and a fill that bleeds 4px under Source Control and
 /// 6px under Info is a panel whose rows visibly do not belong to each other.
-pub(crate) const ROW_INSET: f32 = 4.;
+pub(crate) const ROW_INSET: f32 = 6.;
 
 /// Whether this forward is the one that reaches `port` on the far side.
 ///
@@ -1041,8 +1041,8 @@ impl Tty7App {
             .items_baseline()
             .gap(px(9.))
             .px(px(ROW_INSET))
-            .py(px(2.))
-            .rounded(px(5.))
+            .py(px(4.))
+            .rounded(crate::ui::rounding::ROW_RADIUS)
             .text_size(rems(TEXT))
             // Only rows that can do something light up, so the fill is never a
             // promise the row cannot keep.
@@ -1298,7 +1298,7 @@ impl Tty7App {
                     .gap(px(8.))
                     .px(px(ROW_INSET))
                     .py(px(1.))
-                    .rounded(px(5.))
+                    .rounded(crate::ui::rounding::ROW_RADIUS)
                     .hover(|s| s.bg(gpui::rgb(sf.hover)))
                     .child(info_chip(
                         &p.port.to_string(),

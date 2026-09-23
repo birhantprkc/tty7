@@ -267,8 +267,10 @@ impl Theme {
 
     pub(crate) fn interactions(&self) -> Interactions {
         let m = self.neutrals();
-        let navigation = mix(m.sidebar, m.accent, if self.dark { 0.18 } else { 0.10 });
-        let choice = mix(m.popover, m.accent, if self.dark { 0.22 } else { 0.12 });
+        let navigation = mix(m.sidebar, 0x2878df, if self.dark { 0.28 } else { 0.14 });
+        // Menus use a blue wash; the switcher uses the solid companion fill.
+        // Keep labels and shortcut hints readable on the shared menu surface.
+        let choice = mix(m.popover, 0x2878df, if self.dark { 0.34 } else { 0.20 });
         let preferred_label = if self.dark { 0x121418 } else { 0xffffff };
         let fill = self.clear_ink(
             legible_ink(preferred_label, m.accent, TEXT_FLOOR),

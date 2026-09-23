@@ -2336,11 +2336,11 @@ impl Tty7App {
             let path = format!("{} › {}", t(entry.section.title()), t(title));
             let row = v_flex()
                 .id(SharedString::from(format!("search-result-{title:?}")))
-                .px_3()
-                .py_2()
-                .rounded_lg()
+                .px_4()
+                .py_3()
+                .rounded(rounding::CARD_RADIUS)
                 .border_1()
-                .border_color(cx.theme().border)
+                .border_color(cx.theme().border.opacity(0.65))
                 .anchor_scroll(
                     self.active_settings()
                         .filter(|s| s.search_selection == index)
@@ -2558,7 +2558,7 @@ impl Tty7App {
 
         let nav_body = SettingsSection::ALL
             .into_iter()
-            .fold(SidebarMenu::new(), |menu, target| {
+            .fold(SidebarMenu::new().gap_2(), |menu, target| {
                 menu.child(nav_item(t(target.title()), target, target.icon()))
             });
 
@@ -3186,7 +3186,7 @@ impl Tty7App {
         // description, which then ran out past the row on every wide page.
         let stacked = self.settings_row_under(STACK_ROW_BELOW, cx);
         let labels = v_flex()
-            .gap_0p5()
+            .gap_1()
             .min_w_0()
             .when(gated, |col| col.opacity(0.45))
             .child(
@@ -3242,10 +3242,13 @@ impl Tty7App {
             .when(!stacked, |row| {
                 row.flex_row().items_center().justify_between().gap_8()
             })
-            .py_2()
-            .px_2p5()
-            .mx_neg_2p5()
-            .rounded_lg()
+            .py_3()
+            .px_3()
+            .mx_neg_3()
+            .rounded(rounding::CARD_RADIUS)
+            .when(!hit, |row| {
+                row.hover(|s| s.bg(theme.secondary.opacity(0.45)))
+            })
             .when(hit, |row| row.bg(theme.accent))
             // Only the first hit on the page carries the anchor: it is the one
             // the page scrolls to, and a later row claiming it would drag the

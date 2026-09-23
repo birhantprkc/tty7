@@ -866,13 +866,13 @@ impl Tty7App {
                         }
                     })
                     .w_full()
-                    .py_1p5()
+                    .py_2()
                     .items_center()
                     .justify_between()
                     .gap_2()
                     .pl_2()
                     .pr_2()
-                    .rounded_lg()
+                    .rounded(crate::ui::rounding::CARD_RADIUS)
                     .when(is_active, |s| {
                         s.bg(cx.theme().sidebar_accent)
                             .text_color(cx.theme().sidebar_accent_foreground)

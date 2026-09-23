@@ -1086,8 +1086,8 @@ impl ListDelegate for PaletteDelegate {
                 .selected(Some(ix) == self.selected)
                 .h(px(PALETTE_ROW_H))
                 .mx(px(PALETTE_ROW_MX))
-                .rounded(px(6.))
-                .text_sm()
+                .rounded(crate::ui::rounding::ROW_RADIUS)
+                .text_size(gpui::rems(13. / 16.))
                 .child(row),
         )
     }
@@ -1317,7 +1317,7 @@ impl PaletteView {
 
 impl EventEmitter<PaletteEvent> for PaletteView {}
 
-const PALETTE_ROW_H: f32 = 36.;
+const PALETTE_ROW_H: f32 = 34.;
 
 /// Left inset of a row's *label*, so a section header can start on the same
 /// pixel column as the rows it introduces. A row is a `ListItem` inset by
@@ -1353,8 +1353,6 @@ const RECENT_ROWS: usize = 5;
 
 impl Render for PaletteView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        let (border, popover) = (theme.border, theme.popover);
         let scrim = crate::ui::presets::scrim_fill(cx);
 
         let viewport = window.viewport_size();
@@ -1366,11 +1364,7 @@ impl Render for PaletteView {
             .min(PALETTE_ROW_H * PALETTE_VISIBLE_ROWS + 4.));
         let card = v_flex()
             .w(px((viewport.width.as_f32() - 32.).clamp(0., 600.)))
-            .bg(popover)
-            .border_1()
-            .border_color(border)
-            .rounded(px(12.))
-            .shadow_xl()
+            .map(|panel| crate::ui::theme::floating_surface(panel, cx))
             .overflow_hidden()
             .pb_1()
             .child(
