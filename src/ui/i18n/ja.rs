@@ -1587,6 +1587,8 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::CmdDocumentWidthThird => "ドキュメント: 幅3分の1",
         L10nKey::CmdDocumentWidthHalf => "ドキュメント: 幅半分",
         L10nKey::CmdDocumentWidthTwoThirds => "ドキュメント: 幅3分の2",
+        L10nKey::CmdToggleDocumentPreview => "ドキュメント: Markdown プレビューを切り替え",
+        L10nKey::CmdToggleDocumentWrap => "ドキュメント: 折り返しを切り替え",
         L10nKey::CmdGitCommit => "Git: コミット",
         L10nKey::CmdGitStageAll => "Git: すべての変更をステージ",
         L10nKey::CmdGitUnstageAll => "Git: すべてのステージを取り消す",

@@ -1523,6 +1523,8 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::CmdDocumentWidthThird => "Document: Third Width",
         L10nKey::CmdDocumentWidthHalf => "Document: Half Width",
         L10nKey::CmdDocumentWidthTwoThirds => "Document: Two-Thirds Width",
+        L10nKey::CmdToggleDocumentPreview => "Document: Toggle Markdown Preview",
+        L10nKey::CmdToggleDocumentWrap => "Document: Toggle Word Wrap",
         L10nKey::CmdGitCommit => "Git: Commit",
         L10nKey::CmdGitStageAll => "Git: Stage All Changes",
         L10nKey::CmdGitUnstageAll => "Git: Unstage All Changes",

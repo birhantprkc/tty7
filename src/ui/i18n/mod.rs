@@ -1239,6 +1239,8 @@ l10n_keys! {
     CmdDocumentWidthThird,
     CmdDocumentWidthHalf,
     CmdDocumentWidthTwoThirds,
+    CmdToggleDocumentPreview,
+    CmdToggleDocumentWrap,
     CmdGitCommit,
     CmdGitStageAll,
     CmdGitUnstageAll,

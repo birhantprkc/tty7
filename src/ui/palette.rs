@@ -83,6 +83,8 @@ pub enum CommandKind {
     DocumentWidthThird,
     DocumentWidthHalf,
     DocumentWidthTwoThirds,
+    ToggleDocumentPreview,
+    ToggleDocumentWrap,
     RestartSshSession,
     ScmCommit,
     ScmStageAll,
@@ -193,6 +195,8 @@ impl CommandKind {
             DocumentWidthThird => "document-width-third",
             DocumentWidthHalf => "document-width-half",
             DocumentWidthTwoThirds => "document-width-two-thirds",
+            ToggleDocumentPreview => "document-preview",
+            ToggleDocumentWrap => "document-wrap",
             RestartSshSession => "ssh-reconnect",
             ScmCommit => "git-commit",
             ScmStageAll => "git-stage-all",
@@ -299,6 +303,8 @@ impl CommandKind {
             DocumentWidthThird => "DocumentWidthThird",
             DocumentWidthHalf => "DocumentWidthHalf",
             DocumentWidthTwoThirds => "DocumentWidthTwoThirds",
+            ToggleDocumentPreview => "ToggleDocumentPreview",
+            ToggleDocumentWrap => "ToggleDocumentWrap",
             RestartSshSession => "RestartSshSession",
             OpenSshProfiles => "OpenSshProfiles",
             ScmCommit => "ScmCommit",
@@ -513,6 +519,8 @@ impl Command {
             Command::localized(L10nKey::CmdDocumentWidthThird, DocumentWidthThird),
             Command::localized(L10nKey::CmdDocumentWidthHalf, DocumentWidthHalf),
             Command::localized(L10nKey::CmdDocumentWidthTwoThirds, DocumentWidthTwoThirds),
+            Command::localized(L10nKey::CmdToggleDocumentPreview, ToggleDocumentPreview),
+            Command::localized(L10nKey::CmdToggleDocumentWrap, ToggleDocumentWrap),
             Command::localized(
                 if tab_bar_left {
                     L10nKey::CmdTabBarMoveToTop

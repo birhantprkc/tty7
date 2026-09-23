@@ -5634,6 +5634,8 @@ impl Tty7App {
             DocumentWidthTwoThirds => {
                 self.set_document_ratio(crate::core::config::DOCUMENT_RATIO_TWO_THIRDS, cx)
             }
+            ToggleDocumentPreview => self.toggle_document_preview(cx),
+            ToggleDocumentWrap => self.toggle_document_wrap(window, cx),
             RestartSshSession => self.restart_ssh_session(window, cx),
             SetTheme(i) => {
                 if let Some(id) = crate::ui::presets::all(cx).get(i).map(|t| t.id.clone()) {
@@ -8647,6 +8649,12 @@ impl Render for Tty7App {
                         this.set_document_ratio(crate::core::config::DOCUMENT_RATIO_TWO_THIRDS, cx)
                     }),
                 )
+                .on_action(cx.listener(|this, _: &ToggleDocumentPreview, _window, cx| {
+                    this.toggle_document_preview(cx)
+                }))
+                .on_action(cx.listener(|this, _: &ToggleDocumentWrap, window, cx| {
+                    this.toggle_document_wrap(window, cx)
+                }))
                 .on_action(cx.listener(|this, _: &ScmCommit, window, cx| {
                     this.run_scm_action(ScmIntent::Commit, window, cx)
                 }))
