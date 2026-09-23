@@ -34,7 +34,6 @@
 - **可被 agent 驱动**：一个 agent 能给另一个开 pane、派活、等它跑完、读走结果，GUI 开不开都行
 - **编辑器级输入**：建议、补全、高亮、历史搜索，不用装任何插件
 - **远程开发**：文件、仓库、pane 和 git 信息都留在远端机器上，走自带的 SSH 栈
-- **Git 就在终端旁边**：源代码管理、diff、worktree，不用切出窗口
 
 ## 安装
 
@@ -57,7 +56,7 @@ macOS、Windows、Linux 的原生构建都在 [**Releases**](https://github.com/
 | **Shell 集成** | pane 启动时自动注入，不用你装什么 · 提示符边界 · 工作目录 · 退出码 · 命令跑完发通知 · 覆盖 zsh、bash、fish、PowerShell、WSL 和远程 pane |
 | **远程工作区** | 远端的文件、仓库、改动、diff、worktree、标签页和 pane · 从任意客户端重连，接着离开时的位置继续 |
 | **SSH** | 自带 russh 实现，不依赖外部 ssh：profile 凭据存入 keychain · SFTP 面板 · 端口转发 · 跳板机 · `tty7-server` 只需安装一次，无需 root |
-| **Git** | 源代码管理面板跟着焦点 pane 走 · 暂存、提交、amend、切分支、push、stash · 双栏或统一 diff · 提交图谱支持 cherry-pick、revert、reset · 新建 worktree 连同它的标签页 |
+
 
 ## 支持的 agent
 
