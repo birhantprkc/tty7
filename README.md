@@ -87,9 +87,9 @@ that tells tty7 which session to fork.
 | **Kimi Code** | ✓ | ✓ | |
 | **Pi** | ✓ | ✓ | |
 | **Crush** | ✓ | ✓ | |
+| **Cursor** | ✓ | ✓ | |
 | Aider | ✓ | | |
 | Amp | ✓ | | |
-| Cursor | ✓ | | |
 | Auggie | ✓ | | |
 | Hermes | ✓ | | |
 | Vibe | ✓ | | |

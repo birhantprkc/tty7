@@ -14,8 +14,8 @@ the agent say which one it is.
 
 | Agent | |
 |---|---|
-| Claude Code · Codex · TraeCode · Copilot CLI · OpenCode · Pi · Grok Build · Oh My Pi · Gemini · Droid · Qwen Code · Goose · Kimi Code · Qoder CLI · Crush · CodeBuddy | Hooks available |
-| Aider · Amp · Cursor · Auggie · Hermes · Vibe · Antigravity | Detected and labelled, but no status channel yet |
+| Claude Code · Codex · TraeCode · Copilot CLI · OpenCode · Pi · Grok Build · Oh My Pi · Gemini · Droid · Qwen Code · Goose · Kimi Code · Qoder CLI · Crush · CodeBuddy · Cursor CLI | Hooks available |
+| Aider · Amp · Auggie · Hermes · Vibe · Antigravity | Detected and labelled, but no status channel yet |
 
 Installing writes into that agent's own configuration directory. Once installed
 the row grows a second **Uninstall** button beside the first, which itself
@@ -26,6 +26,14 @@ ships a newer hook.
   Crush ships only a `PreToolUse` hook today. It is enough to remember the
   session for resume, but there is no turn boundary behind it, so a Crush pane
   carries no status dot and `tty7 wait` times out rather than returning.
+</Note>
+
+<Note>
+  `cursor-agent` does not yet send Cursor's `beforeSubmitPrompt` hook, so a
+  Cursor pane turns **working** at the turn's first tool call rather than when
+  you press Enter, and a turn that answers without calling a tool never shows
+  as working at all. The session id is recorded either way, so Copy Session ID
+  and resume work from the first hook.
 </Note>
 
 <Note>

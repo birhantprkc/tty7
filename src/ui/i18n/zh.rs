@@ -703,6 +703,7 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsAgentQoderCLI => "Qoder CLI",
         L10nKey::SettingsAgentCrush => "Crush",
         L10nKey::SettingsAgentCodeBuddy => "CodeBuddy",
+        L10nKey::SettingsAgentCursorCli => "Cursor CLI",
         L10nKey::SettingsSearchAboutKeywords => {
             "关于 版本 许可证 致谢 构建 更新 检查 github about version license credits update"
         }
@@ -842,6 +843,9 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsSearchCrushKeywords => "Crush agent 集成 钩子 安装 crush",
         L10nKey::SettingsSearchCodeBuddyKeywords => {
             "CodeBuddy 腾讯云代码助手 agent 集成 钩子 安装 codebuddy cbc tencent"
+        }
+        L10nKey::SettingsSearchCursorCliKeywords => {
+            "Cursor CLI agent 集成 钩子 安装 cursor cursor-agent"
         }
         L10nKey::SettingsSearchPiKeywords => {
             "Pi agent 集成 扩展 安装 pi agent integration extension install"

@@ -796,6 +796,7 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::SettingsAgentQoderCLI => "Qoder CLI",
         L10nKey::SettingsAgentCrush => "Crush",
         L10nKey::SettingsAgentCodeBuddy => "CodeBuddy",
+        L10nKey::SettingsAgentCursorCli => "Cursor CLI",
         L10nKey::SettingsSearchAboutKeywords => "version license credits build update check github",
         L10nKey::SettingsSearchAppHttpProxyKeywords => {
             "proxy http https socks socks5 clash v2ray network download update"
@@ -895,6 +896,9 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::SettingsSearchCrushKeywords => "agent integration hooks install crush",
         L10nKey::SettingsSearchCodeBuddyKeywords => {
             "agent integration hooks install codebuddy codebuddy-code cbc tencent"
+        }
+        L10nKey::SettingsSearchCursorCliKeywords => {
+            "agent integration hooks install cursor cursor-agent"
         }
         L10nKey::SettingsSearchPiKeywords => "agent integration extension install pi",
         L10nKey::SettingsSearchPortForwardingKeywords => {
