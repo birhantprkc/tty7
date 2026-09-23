@@ -802,6 +802,7 @@ pub struct Tty7App {
     pub(crate) font_family: String,
     pub(crate) font_family_bold: Option<String>,
     pub(crate) font_family_italic: Option<String>,
+    pub(crate) font_fallbacks: Vec<String>,
     pub(crate) font_features: Option<gpui::FontFeatures>,
     terminal_cursor_style: ConfigCursorStyle,
     terminal_scrollback_limit: usize,
@@ -1115,6 +1116,31 @@ fn clear_window_override_values(config: &mut Config, backdrop_is_local: bool) {
     }
 }
 
+/// The id the fullscreen hint is pushed under, so that entering again replaces
+/// it and leaving takes it away.
+struct FullscreenHint;
+
+/// Whether the title bar carries minimize, maximize and close right now.
+///
+/// Not in fullscreen. A fullscreen window has no caption: Windows clears
+/// `WS_CAPTION` and answers `HTCLIENT` along the whole top edge, so the three
+/// buttons would draw, light up under the pointer and do nothing when clicked.
+/// The row they sit at the end of stays, because it is also the tab strip.
+///
+/// Never on macOS, which draws no buttons of its own: those are the system's
+/// traffic lights, and the system hides them itself.
+pub(crate) fn window_controls_drawn(fullscreen: bool) -> bool {
+    !cfg!(target_os = "macos") && !fullscreen
+}
+
+/// How much of the title bar's trailing end the window buttons take.
+pub(crate) fn window_controls_w(fullscreen: bool) -> f32 {
+    match window_controls_drawn(fullscreen) {
+        true => WINDOW_CONTROLS_W,
+        false => 0.,
+    }
+}
+
 impl Tty7App {
     pub fn for_workspace(
         id: Option<WorkspaceId>,
@@ -1272,6 +1298,7 @@ impl Tty7App {
             font_family,
             font_family_bold,
             font_family_italic,
+            font_fallbacks,
             font_features,
             terminal_cursor_style,
             terminal_scrollback_limit,
@@ -1283,6 +1310,7 @@ impl Tty7App {
                 cfg.font_family.clone(),
                 cfg.font_family_bold.clone(),
                 cfg.font_family_italic.clone(),
+                cfg.font_fallbacks.clone(),
                 cfg.font_features
                     .as_ref()
                     .map(crate::core::config::gpui_font_features),
@@ -1418,6 +1446,7 @@ impl Tty7App {
             font_family,
             font_family_bold,
             font_family_italic,
+            font_fallbacks,
             font_features,
             terminal_cursor_style,
             terminal_scrollback_limit,
@@ -3590,6 +3619,46 @@ impl Tty7App {
         remember_leaf_in(&mut self.tabs, leaf);
     }
 
+    /// Toggle fullscreen, and say how to leave it on the way in.
+    ///
+    /// Only on the way in, and only from the action: entering is an instant in
+    /// which the window buttons disappear, and a window that starts fullscreen
+    /// because the setting says so is not a surprise anybody needs explaining.
+    /// The chord comes from the keymap rather than from a string, because it is
+    /// `F11` on Windows and Linux, `Cmd+Enter` on macOS, and either of them may
+    /// have been rebound.
+    ///
+    /// The hint carries an id of its own, which is what keeps a held-down
+    /// `F11` to one notice rather than a column of identical ones: pushing
+    /// under an id already on screen replaces that one. Leaving through the
+    /// action takes it back too, so a quick in-and-out does not leave the way
+    /// out on screen after it has been taken. Leaving some other way — a
+    /// window manager with a chord of its own — just lets it time out, which
+    /// is a second or two of a stale notice and not worth watching every
+    /// frame for.
+    fn toggle_fullscreen(&self, window: &mut Window, cx: &mut App) {
+        let entering = !window.is_fullscreen();
+        window.toggle_fullscreen();
+        window.remove_notification::<FullscreenHint>(cx);
+        // Nothing disappeared where there were no buttons to begin with, so
+        // there is nothing to explain.
+        if !entering || !window_controls_drawn(false) {
+            return;
+        }
+        let hint = match crate::ui::home::key_hint("ToggleFullscreen", cx) {
+            Some(chord) => t_fmt(L10nKey::AppFullscreenEntered, &[("key", &chord)]),
+            // Rebound to nothing at all: still worth saying the buttons are gone,
+            // just without naming a key that would not work.
+            None => t(L10nKey::AppFullscreenEnteredNoKey).to_string(),
+        };
+        window.push_notification(
+            gpui_component::notification::Notification::new()
+                .id::<FullscreenHint>()
+                .message(hint),
+            cx,
+        );
+    }
+
     fn focus_leaf(&self, leaf: &PaneSlot, window: &mut Window, cx: &mut App) {
         let handle = leaf.focus_handle(cx);
         window.focus(&handle, cx);
@@ -4829,7 +4898,7 @@ impl Tty7App {
                 refocus.as_ref().map(|s| s.entity_id()) == Some(leaf.entity_id());
             leaf.update(cx, |view, cx| {
                 if view.agent_session().map(|s| s.status) == Some(AgentStatus::Done) {
-                    view.mark_agent_result_unread(refocus_incoming);
+                    view.mark_agent_result_unread(refocus_incoming, cx);
                     cx.notify();
                 }
             });
@@ -5422,7 +5491,7 @@ impl Tty7App {
             NextTab => self.cycle_tab(true, window, cx),
             PrevTab => self.cycle_tab(false, window, cx),
             ToggleMaximizePane => self.toggle_maximize(window, cx),
-            ToggleFullscreen => window.toggle_fullscreen(),
+            ToggleFullscreen => self.toggle_fullscreen(window, cx),
             ToggleTabSidebar => self.toggle_tab_sidebar(cx),
             ToggleLeftPanel => self.toggle_left_panel(cx),
             ToggleRightPanel => self.toggle_right_panel(cx),
@@ -6695,12 +6764,13 @@ impl Tty7App {
             self.terminal_scrollback_limit = config.scrollback_limit;
             self.apply_terminal_config_to_panes(&config, cx);
         }
-        let (font_size, line_height, font_family, font_features) = {
+        let (font_size, line_height, font_family, font_fallbacks, font_features) = {
             let cfg = cx.global::<Config>();
             (
                 cfg.font_size,
                 cfg.line_height,
                 cfg.font_family.clone(),
+                cfg.font_fallbacks.clone(),
                 cfg.font_features
                     .as_ref()
                     .map(crate::core::config::gpui_font_features),
@@ -6740,6 +6810,21 @@ impl Tty7App {
                 for leaf in tab.pane.terminals() {
                     let family = font_family.clone();
                     leaf.update(cx, |v, cx| v.set_font_family(family, cx));
+                }
+            }
+        }
+        // A `font_fallbacks` edit on its own reached no live pane at all: the
+        // chain is built once per view and from then on only cloned around.
+        // `set_font_family` rereads it too, so an edit that moves both ends up
+        // building the same chain twice rather than disagreeing about it.
+        if font_fallbacks != self.font_fallbacks {
+            self.font_fallbacks = font_fallbacks;
+            for tab in &self.tabs {
+                for leaf in tab.pane.terminals() {
+                    leaf.update(cx, |v, cx| {
+                        v.reread_fallback_chain(cx);
+                        cx.notify();
+                    });
                 }
             }
         }
@@ -7412,7 +7497,7 @@ impl Tty7App {
                     cx.notify();
                 } else {
                     self.stop_recording(cx);
-                    self.reset_keybinding(action, cx);
+                    self.unbind_keybinding(action, cx);
                 }
                 return;
             }
@@ -7472,16 +7557,32 @@ impl Tty7App {
         // only `same_chord` sees it. Compared as text, the displacement never
         // fires and both bindings survive onto that keystroke, where which one
         // wins is arbitrary (#750).
-        let displaced = crate::ui::keymap::effective_bindings(cx)
+        //
+        // Only that chord moves: the action that had it keeps any others it
+        // has, since an action can carry several (#868) and emptying it would
+        // take away keys that were never on this keystroke. An extra default —
+        // Alt+Enter beside Shift+Enter — follows its action's first chord rather
+        // than being one of its own, so its owner is unbound outright, as it
+        // always was.
+        use crate::ui::keymap::same_chord;
+        let displaced: Option<(String, Vec<String>)> = crate::ui::keymap::effective_chords(cx)
             .into_iter()
-            .chain(crate::ui::keymap::extra_bindings(cx))
-            .find(|(a, k)| *a != action && crate::ui::keymap::same_chord(k, &spec))
-            .map(|(a, _)| a);
+            .find(|(a, chords)| *a != action && chords.iter().any(|k| same_chord(k, &spec)))
+            .map(|(a, chords)| {
+                let rest = chords.into_iter().filter(|k| !same_chord(k, &spec));
+                (a, rest.collect())
+            })
+            .or_else(|| {
+                crate::ui::keymap::extra_bindings(cx)
+                    .into_iter()
+                    .find(|(a, k)| *a != action && same_chord(k, &spec))
+                    .map(|(a, _)| (a, Vec::new()))
+            });
         // A trailing "…" on an action name marks a command that opens
         // something; it is not punctuation, and inside a sentence it reads as
         // the sentence trailing off — "Rename Tab… took the shortcut from".
         let in_prose = |name: &str| name.trim_end_matches('…').to_string();
-        let note = displaced.as_ref().map(|other| {
+        let note = displaced.as_ref().map(|(other, _)| {
             t_fmt(
                 L10nKey::AppKeybindingDisplacedNote,
                 &[
@@ -7496,15 +7597,49 @@ impl Tty7App {
                 ],
             )
         });
+        // Both written as lists. Recording a shortcut sets it — the row showed
+        // one chord and now shows another — and a bare string in config adds a
+        // chord beside the default instead (#868).
         self.update_config(cx, |cfg| {
-            if let Some(other) = &displaced {
-                cfg.keybindings.insert(other.clone(), String::new());
+            use crate::core::config::KeybindingOverride;
+            if let Some((other, rest)) = &displaced {
+                cfg.keybindings
+                    .insert(other.clone(), KeybindingOverride::Exact(rest.clone()));
             }
-            cfg.keybindings.insert(action, spec);
+            cfg.keybindings
+                .insert(action, KeybindingOverride::Exact(vec![spec]));
         });
         crate::ui::keymap::rebind(cx);
         if let Some(s) = self.active_settings_mut() {
             s.rebinding_note = note;
+        }
+        cx.notify();
+    }
+
+    /// Takes every chord off an action, and keeps it off.
+    ///
+    /// ⌫ on a row that has recorded nothing used to *reset* it — drop the
+    /// override so the action gets its shipped chord back. On a row nobody has
+    /// overridden, which is every row the first time it is looked at, that is a
+    /// no-op: someone pressing Backspace over Alt+1 to be rid of it watched
+    /// Alt+1 sit exactly where it was and read it as the default restoring
+    /// itself (#901). Nothing anywhere in the app said "this action should have
+    /// no key", though `config.json` has spelled it `[]` since #868.
+    ///
+    /// So ⌫ writes that empty list, and the **Reset** button beside the row —
+    /// which appears the moment an action is overridden, this way included — is
+    /// the way back to the default.
+    pub(crate) fn unbind_keybinding(&mut self, action: String, cx: &mut Context<Self>) {
+        self.update_config(cx, |cfg| {
+            cfg.keybindings.insert(
+                action,
+                crate::core::config::KeybindingOverride::Exact(Vec::new()),
+            );
+        });
+        crate::ui::keymap::rebind(cx);
+        if let Some(s) = self.active_settings_mut() {
+            s.recording = None;
+            s.rebinding_note = None;
         }
         cx.notify();
     }
@@ -7972,11 +8107,41 @@ impl Render for Tty7App {
             }
         };
 
-        let title_bar = TitleBar::new()
-            .h(px(TITLE_BAR_HEIGHT))
-            .bg(cx.theme().transparent)
-            .border_color(cx.theme().transparent)
-            .child(strip);
+        // No window buttons in fullscreen, where they cannot work: the window
+        // has no caption for the platform to hit-test, so they would draw,
+        // light up under the pointer and do nothing when clicked. `TitleBar`
+        // always draws them, so the strip goes into a plain row of the same
+        // geometry instead — the row itself stays, since it holds the tabs,
+        // the chrome tiles and the docked document's header.
+        let title_bar =
+            if window_controls_drawn(window.is_fullscreen()) || cfg!(target_os = "macos") {
+                TitleBar::new()
+                    .h(px(TITLE_BAR_HEIGHT))
+                    .bg(cx.theme().transparent)
+                    .border_color(cx.theme().transparent)
+                    .child(strip)
+                    .into_any_element()
+            } else {
+                div()
+                    .flex_shrink_0()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .h(px(TITLE_BAR_HEIGHT))
+                    .pl(px(TITLE_BAR_LEAD))
+                    .border_b_1()
+                    .border_color(cx.theme().transparent)
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .h_full()
+                            .flex_1()
+                            .child(strip),
+                    )
+                    .into_any_element()
+            };
         let body_area = div()
             .flex_1()
             .relative()
@@ -8178,7 +8343,9 @@ impl Render for Tty7App {
                                         .right(px(panel_px))
                                         .w(px(document_px))
                                         .when(panel_px <= 0., |d| {
-                                            d.pr(px(crate::ui::tab_strip::trailing_chrome_w()))
+                                            d.pr(px(crate::ui::tab_strip::trailing_chrome_w(
+                                                window.is_fullscreen(),
+                                            )))
                                         })
                                         .child(header),
                                 )
@@ -8375,9 +8542,9 @@ impl Render for Tty7App {
                 .on_action(cx.listener(|this, _: &ToggleMaximizePane, window, cx| {
                     this.toggle_maximize(window, cx)
                 }))
-                .on_action(
-                    cx.listener(|_, _: &ToggleFullscreen, window, _cx| window.toggle_fullscreen()),
-                )
+                .on_action(cx.listener(|this, _: &ToggleFullscreen, window, cx| {
+                    this.toggle_fullscreen(window, cx)
+                }))
                 .on_action(cx.listener(|this, _: &ToggleTabSidebar, _window, cx| {
                     this.toggle_tab_sidebar(cx)
                 }))
@@ -9764,6 +9931,24 @@ mod tests {
         assert_eq!(band.size.height, px(TITLE_BAR_HEIGHT));
     }
 
+    /// Fullscreen takes the window buttons and nothing else: the strip keeps
+    /// its row, and the room reserved for the buttons at its end comes back.
+    /// macOS never had any to take.
+    #[test]
+    fn fullscreen_drops_the_window_buttons_but_not_their_row() {
+        assert!(!super::window_controls_drawn(true));
+        assert_eq!(super::window_controls_w(true), 0.);
+        assert_eq!(
+            super::window_controls_drawn(false),
+            !cfg!(target_os = "macos")
+        );
+        assert_eq!(super::window_controls_w(false), super::WINDOW_CONTROLS_W);
+        assert_eq!(
+            crate::ui::tab_strip::trailing_chrome_w(true),
+            crate::ui::tab_strip::trailing_chrome_tiles_w()
+        );
+    }
+
     /// A surface narrower than its own shadow is only reachable mid-resize, but
     /// a negative width would make `Bounds::contains` answer for a rectangle
     /// that is inside out.
@@ -10639,12 +10824,17 @@ mod keybinding_gpui_tests {
         });
     }
 
-    fn wait_for_binding(vcx: &mut VisualTestContext, action: &str, expected: &str) {
+    /// Waits for `action`'s entry in config to read `expected` — compared as the
+    /// JSON the file gets, since that is what the reader of `config.json` sees.
+    fn wait_for_binding(vcx: &mut VisualTestContext, action: &str, expected: serde_json::Value) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {
             vcx.background_executor.run_until_parked();
-            let got = vcx.update(|_, cx| cx.global::<Config>().keybindings.get(action).cloned());
-            if got.as_deref() == Some(expected) {
+            let got = vcx.update(|_, cx| {
+                serde_json::to_value(cx.global::<Config>().keybindings.get(action))
+                    .expect("a binding serializes")
+            });
+            if got == expected {
                 return;
             }
             assert!(
@@ -10660,7 +10850,11 @@ mod keybinding_gpui_tests {
         let (app, mut vcx) = harness(cx);
         begin_capture(&app, &mut vcx, "NewTab");
         vcx.simulate_keystrokes("secondary-shift-n");
-        wait_for_binding(&mut vcx, "NewTab", "secondary-shift-n");
+        // A list, because recording a shortcut on the Settings page *sets* it:
+        // the row showed one chord and now shows another. A bare string in
+        // config adds a chord beside the default (#868), which is not what
+        // the person at the row just did.
+        wait_for_binding(&mut vcx, "NewTab", serde_json::json!(["secondary-shift-n"]));
 
         let recording = app.update_in(&mut vcx, |app, _, _| {
             app.active_settings().map(|s| s.recording.is_some())
@@ -10678,7 +10872,30 @@ mod keybinding_gpui_tests {
         begin_capture(&app, &mut vcx, "CloseActiveTab");
         vcx.simulate_keystrokes("secondary-b");
         vcx.simulate_keystrokes("x");
-        wait_for_binding(&mut vcx, "CloseActiveTab", "secondary-b x");
+        wait_for_binding(
+            &mut vcx,
+            "CloseActiveTab",
+            serde_json::json!(["secondary-b x"]),
+        );
+    }
+
+    #[gpui::test]
+    fn recording_a_chord_another_action_also_has_takes_only_that_chord(cx: &mut TestAppContext) {
+        let (app, mut vcx) = harness(cx);
+        vcx.update(|_, cx| {
+            cx.global_mut::<Config>().keybindings = serde_json::from_value(serde_json::json!({
+                "NextTab": ["ctrl-tab", "secondary-alt-n"],
+            }))
+            .expect("the binding loads");
+            crate::ui::keymap::rebind(cx);
+        });
+        begin_capture(&app, &mut vcx, "NewTab");
+        vcx.simulate_keystrokes("secondary-alt-n");
+        wait_for_binding(&mut vcx, "NewTab", serde_json::json!(["secondary-alt-n"]));
+        // Emptying the other action was right when an action had one chord.
+        // With two, it would take Ctrl+Tab away as well, for a keystroke that
+        // was never on it.
+        wait_for_binding(&mut vcx, "NextTab", serde_json::json!(["ctrl-tab"]));
     }
 
     #[gpui::test]
@@ -10686,8 +10903,8 @@ mod keybinding_gpui_tests {
         let (app, mut vcx) = harness(cx);
         begin_capture(&app, &mut vcx, "NewTab");
         vcx.simulate_keystrokes("alt-enter");
-        wait_for_binding(&mut vcx, "NewTab", "alt-enter");
-        wait_for_binding(&mut vcx, "InsertNewline", "");
+        wait_for_binding(&mut vcx, "NewTab", serde_json::json!(["alt-enter"]));
+        wait_for_binding(&mut vcx, "InsertNewline", serde_json::json!([]));
 
         let note = app.update_in(&mut vcx, |app, _, _| {
             app.active_settings().and_then(|s| s.rebinding_note.clone())
@@ -10697,6 +10914,56 @@ mod keybinding_gpui_tests {
                 .is_some_and(|n| n.contains("Insert Newline")),
             "the takeover note must name the action that lost the chord (got {note:?})"
         );
+    }
+
+    /// #901, the half that happens in the UI: Alt+1…9 belongs to vim, and the
+    /// only gesture in the app that looks like "take this shortcut away" used
+    /// to *reset* the row instead — a no-op on a row nobody had overridden,
+    /// so the default appeared to restore itself however many times it was
+    /// pressed.
+    #[gpui::test]
+    fn backspace_on_a_row_unbinds_the_action_rather_than_restoring_its_default(
+        cx: &mut TestAppContext,
+    ) {
+        let (app, mut vcx) = harness(cx);
+        let shipped = vcx
+            .update(|_, cx| crate::ui::keymap::effective_key("ActivateTab1", cx))
+            .expect("Go to Tab 1 ships with a chord");
+
+        begin_capture(&app, &mut vcx, "ActivateTab1");
+        vcx.simulate_keystrokes("backspace");
+        wait_for_binding(&mut vcx, "ActivateTab1", serde_json::json!([]));
+
+        vcx.update(|_, cx| {
+            assert_eq!(
+                crate::ui::keymap::effective_key("ActivateTab1", cx),
+                None,
+                "the row has no chord left to show"
+            );
+            let typed = [gpui::Keystroke::parse(&shipped).expect("the chord parses")];
+            let context = [gpui::KeyContext::parse("Terminal").expect("the context parses")];
+            assert!(
+                cx.key_bindings()
+                    .borrow()
+                    .bindings_for_input(&typed, &context)
+                    .0
+                    .is_empty(),
+                "{shipped} must reach the terminal now, not the tab switcher"
+            );
+        });
+
+        // Reversible, and by the button that is already on the row: an
+        // overridden action — unbound counts — shows **Reset**.
+        app.update_in(&mut vcx, |app, _, cx| {
+            app.reset_keybinding("ActivateTab1".to_string(), cx)
+        });
+        vcx.update(|_, cx| {
+            assert_eq!(
+                crate::ui::keymap::effective_key("ActivateTab1", cx).as_deref(),
+                Some(shipped.as_str()),
+                "Reset is the way back to the shipped chord"
+            );
+        });
     }
 
     #[gpui::test]

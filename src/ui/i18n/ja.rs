@@ -279,13 +279,10 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsDiscardChangesBody => "編集中の接続に、まだ保存していない変更があります。",
         L10nKey::SettingsKeepEditing => "編集を続ける",
         L10nKey::SettingsName => "名前",
-        L10nKey::SettingsNameDesc => "この接続の表示名",
         L10nKey::SettingsHost => "ホスト名",
-        L10nKey::SettingsHostDesc => "ホスト名または IP アドレス",
         L10nKey::SettingsHostRequired => "ホスト名が必要です — 保存されません",
         L10nKey::SettingsPortInvalid => "ポートは 1-65535 の範囲です — 空欄なら 22 です",
         L10nKey::SettingsUser => "ユーザー名",
-        L10nKey::SettingsUserDesc => "ログインユーザー (空欄 = 接続時に解決)",
         L10nKey::SettingsAuth => "認証方式",
         L10nKey::SettingsAuthDesc => "認証方式。自動の場合は適用可能なすべての方式を試します",
         L10nKey::SettingsAuthModeAuto => "自動",
@@ -293,6 +290,24 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsAuthModeKey => "公開鍵",
         L10nKey::SettingsAuthModeAgent => "SSH エージェント",
         L10nKey::SettingsAuthMode2Fa => "二要素認証 (2FA)",
+        L10nKey::SettingsPassword => "パスワード",
+        L10nKey::SettingsNameHint => "任意のラベル",
+        L10nKey::SettingsHostHint => "ホスト名または IP",
+        L10nKey::SettingsUserHint => "接続時に解決",
+        L10nKey::SettingsPasswordDesc => {
+            "システムのキーチェーンに保存され、設定ファイルには書き込まれません。"
+        }
+        L10nKey::SettingsPasswordHint => "接続時に入力する",
+        L10nKey::SettingsKeyPassphrase => "鍵のパスフレーズ",
+        L10nKey::SettingsKeyPassphraseDesc => {
+            "上の鍵を解錠します。システムのキーチェーンに保存されます。"
+        }
+        L10nKey::SettingsPassphraseNeedsKey => {
+            "先に鍵ファイルを指定してください。パスフレーズは解錠する鍵ごとに保存されます。"
+        }
+        L10nKey::SettingsBrowseKey => "参照…",
+        L10nKey::SettingsCouldntSavePassword => "{endpoint} のパスワードを保存できません: {error}",
+        L10nKey::SettingsCouldntSavePassphrase => "{key} のパスフレーズを保存できません: {error}",
         L10nKey::SettingsJumpHost => "ジャンプホスト",
         L10nKey::SettingsJumpHostDesc => {
             "トンネリングに使用する別のプロファイル名 (空欄 = 直接接続)"
@@ -639,10 +654,10 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
             "tmux では、ペイン/タブの操作をプレフィックスキーの後に行います（例: Ctrl-B の後に C）"
         }
         L10nKey::SettingsPrefix => "プレフィックスキー",
-        L10nKey::SettingsPressKeys => "キーを入力…",
+        L10nKey::SettingsPressKeys => "キーを入力… · ⌫ でショートカットなし",
         L10nKey::SettingsPauseToSaveEsc => "一時停止して保存 · Esc",
         L10nKey::SettingsKeybindingsIntroDesc => {
-            "ショートカットをクリックして新しいキーを押すと、少し間を置いて保存されます。Ctrl-B の後に X のようなシーケンスはキーを続けて入力。Esc でキャンセル、Backspace は最後のキーを削除し、最初に押すとデフォルトに戻します"
+            "ショートカットをクリックして新しいキーを押すと、少し間を置いて保存されます。Ctrl-B の後に X のようなシーケンスはキーを続けて入力。Esc でキャンセル、Backspace は最後のキーを削除し、最初に押すとショートカットなしになり、「リセット」でデフォルトに戻せます"
         }
         L10nKey::SettingsPrefixNote => {
             "プレフィックスが有効な場合、プレフィックスキーを単独で押すと約 1 秒後にシェルに渡され、プレフィックス + 未割り当てのキーはターミナルへそのまま送信されます"
@@ -788,6 +803,8 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsAgentQwenCode => "Qwen Code",
         L10nKey::SettingsAgentGoose => "Goose",
         L10nKey::SettingsAgentKimiCode => "Kimi Code",
+        L10nKey::SettingsAgentQoderCLI => "Qoder CLI",
+        L10nKey::SettingsAgentCrush => "Crush",
         L10nKey::SettingsSearchAboutKeywords => {
             "バージョン ライセンス クレジット ビルド 更新 確認 github about version license credits update check"
         }
@@ -924,6 +941,12 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         }
         L10nKey::SettingsSearchKimiCodeKeywords => {
             "エージェント 統合 フック インストール kimi code moonshot agent integration hooks install"
+        }
+        L10nKey::SettingsSearchQoderCLIKeywords => {
+            "エージェント 統合 フック インストール qoder qodercli agent integration hooks install"
+        }
+        L10nKey::SettingsSearchCrushKeywords => {
+            "エージェント 統合 フック インストール crush agent integration hooks install"
         }
         L10nKey::SettingsSearchPiKeywords => {
             "エージェント 統合 拡張 インストール pi agent integration extension install"
@@ -1148,6 +1171,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::PanelSessionSubtitle => "セッション",
         L10nKey::PanelProcessesSubtitle => "プロセス",
         L10nKey::PanelPortsSubtitle => "ポート",
+        L10nKey::PanelLatency => "遅延",
         L10nKey::PanelPortsUnsupported => "リモートの tty7-server が古く、ポートを列挙できません。",
         L10nKey::PanelPortsProbeFailed => {
             "このペインが何をリッスンしているか確認できませんでした。"
@@ -1655,6 +1679,10 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::AppReopenTabFailed => "タブを開き直せませんでした: ターミナルが起動しませんでした",
         L10nKey::AppOpenTerminalFailed => "ターミナルを開けませんでした: {error}",
         L10nKey::AppTabsNotRestored => "前回のタブ {count} 個を開き直せませんでした",
+        L10nKey::AppFullscreenEntered => "全画面表示 — 解除するには {key}",
+        L10nKey::AppFullscreenEnteredNoKey => {
+            "全画面表示 — 解除するまでウィンドウボタンは非表示です"
+        }
         L10nKey::LaunchWorkspacesLeftRunning => {
             "このウィンドウだけを復元しました — あと {count} 個のワークスペースがバックグラウンドで実行中です。サイドバーから開き直せます。"
         }
@@ -1835,7 +1863,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::AppMenuCopyWorkingDirectory => "作業ディレクトリをコピー",
         L10nKey::AppMenuCopySessionId => "セッション ID をコピー",
         L10nKey::AppMenuForkSession => "セッションをフォーク",
-        L10nKey::AppMenuClosePaneTab => "ペイン / タブを閉じる",
+        L10nKey::AppMenuClosePaneTab => "閉じる",
         L10nKey::AppMenuCloseOtherTabs => "他のタブを閉じる",
         L10nKey::AppMenuCloseTabsRight => "右側のタブを閉じる",
         L10nKey::AppMenuReopenClosedTab => "閉じたタブをもう一度開く",

@@ -32,7 +32,7 @@ use crate::ui::app::{CONTENT_INSET, TILE_GLYPH_XS, TILE_SIZE_XS, Tty7App};
 use crate::ui::host_ops::{HostId, SharedHost};
 use crate::ui::i18n::{L10nKey, t, t_fmt, t_plural};
 use crate::ui::right_panel::{
-    HEADING, META, META_MONO, ROW_INSET, SEARCH_H, TEXT_MONO, action_strip, git_badge, info_chip,
+    HEADING, META, META_MONO, ROW_INSET, SEARCH_H, action_strip, git_badge, info_chip,
 };
 use crate::ui::rounding::{CARD_RADIUS, HAIRLINE, RoundedCorners as _, segment_corners};
 use crate::ui::scm::ScmIntent;

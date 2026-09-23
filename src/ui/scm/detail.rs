@@ -46,7 +46,7 @@ use tty7_core::core::git::status::DecoStatus;
 use crate::terminal::git_diff::DiffSource;
 use crate::ui::app::{CONTENT_INSET, Tty7App};
 use crate::ui::i18n::{L10nKey, t, t_plural};
-use crate::ui::right_panel::{META, META_MONO, ROW_INSET, TEXT, TEXT_MONO, git_badge, info_chip};
+use crate::ui::right_panel::{META, META_MONO, ROW_INSET, TEXT, git_badge, info_chip};
 use crate::ui::scm::path::{relative_time, split_display_path};
 use crate::ui::scm::state::{CommitDetailView, RepoKey};
 use crate::ui::scm::status::{status_color, status_glyph};

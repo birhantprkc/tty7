@@ -251,13 +251,10 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsDiscardChangesBody => "当前连接有未保存的更改。",
         L10nKey::SettingsKeepEditing => "继续编辑",
         L10nKey::SettingsName => "名称",
-        L10nKey::SettingsNameDesc => "此连接的标签。",
         L10nKey::SettingsHost => "主机",
-        L10nKey::SettingsHostDesc => "主机名或 IP 地址。",
         L10nKey::SettingsHostRequired => "需要填写主机——不会被保存。",
         L10nKey::SettingsPortInvalid => "端口必须在 1-65535 之间——留空表示 22。",
         L10nKey::SettingsUser => "用户",
-        L10nKey::SettingsUserDesc => "登录用户（留空表示连接时解析）。",
         L10nKey::SettingsAuth => "认证",
         L10nKey::SettingsAuthDesc => "认证方式。自动会依次尝试所有适用的方式。",
         L10nKey::SettingsAuthModeAuto => "自动",
@@ -265,6 +262,18 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsAuthModeKey => "密钥",
         L10nKey::SettingsAuthModeAgent => "ssh-agent",
         L10nKey::SettingsAuthMode2Fa => "2FA",
+        L10nKey::SettingsPassword => "密码",
+        L10nKey::SettingsNameHint => "可不填",
+        L10nKey::SettingsHostHint => "主机名或 IP",
+        L10nKey::SettingsUserHint => "连接时再定",
+        L10nKey::SettingsPasswordDesc => "存在系统钥匙串里，不会写进配置文件。",
+        L10nKey::SettingsPasswordHint => "连接时再问",
+        L10nKey::SettingsKeyPassphrase => "密钥口令",
+        L10nKey::SettingsKeyPassphraseDesc => "用来解锁上面那个密钥，存在系统钥匙串里。",
+        L10nKey::SettingsPassphraseNeedsKey => "先填一个密钥文件——口令是跟着它解锁的那个密钥存的。",
+        L10nKey::SettingsBrowseKey => "浏览…",
+        L10nKey::SettingsCouldntSavePassword => "无法保存 {endpoint} 的密码：{error}",
+        L10nKey::SettingsCouldntSavePassphrase => "无法保存 {key} 的口令：{error}",
         L10nKey::SettingsJumpHost => "跳板主机",
         L10nKey::SettingsJumpHostDesc => "用于中转的另一个主机配置的名称（留空 = 直连）。",
         L10nKey::SettingsJumpHostUnknown => "没有名为 {jump_name} 的主机配置——不会被保存。",
@@ -562,10 +571,10 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
             "tmux 预设把窗格/标签页操作映射为前缀序列（例如 Ctrl-B 后按 C）。"
         }
         L10nKey::SettingsPrefix => "前缀",
-        L10nKey::SettingsPressKeys => "按下按键…",
+        L10nKey::SettingsPressKeys => "按下按键… · ⌫ 表示不设快捷键",
         L10nKey::SettingsPauseToSaveEsc => "暂停以保存 · Esc",
         L10nKey::SettingsKeybindingsIntroDesc => {
-            "点击某个快捷键，再按下新按键，短暂停顿后保存。连续按键可组成序列，例如 Ctrl-B 后按 X。Esc 取消；Backspace 移除最后一个按键，最先按下则重置为默认。"
+            "点击某个快捷键，再按下新按键，短暂停顿后保存。连续按键可组成序列，例如 Ctrl-B 后按 X。Esc 取消；Backspace 移除最后一个按键，最先按下则不设快捷键，点「重置」可恢复默认。"
         }
         L10nKey::SettingsPrefixNote => {
             "启用前缀后，单独按前缀键约 1 秒后会传给 shell，前缀 + 未绑定的按键会直接发送到终端。"
@@ -691,6 +700,8 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsAgentQwenCode => "Qwen Code",
         L10nKey::SettingsAgentGoose => "Goose",
         L10nKey::SettingsAgentKimiCode => "Kimi Code",
+        L10nKey::SettingsAgentQoderCLI => "Qoder CLI",
+        L10nKey::SettingsAgentCrush => "Crush",
         L10nKey::SettingsSearchAboutKeywords => {
             "关于 版本 许可证 致谢 构建 更新 检查 github about version license credits update"
         }
@@ -826,6 +837,8 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsSearchKimiCodeKeywords => {
             "Kimi Code 月之暗面 agent 集成 钩子 安装 kimi code moonshot agent integration hooks install"
         }
+        L10nKey::SettingsSearchQoderCLIKeywords => "Qoder CLI agent 集成 钩子 安装 qoder qodercli",
+        L10nKey::SettingsSearchCrushKeywords => "Crush agent 集成 钩子 安装 crush",
         L10nKey::SettingsSearchPiKeywords => {
             "Pi agent 集成 扩展 安装 pi agent integration extension install"
         }
@@ -1035,6 +1048,7 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::PanelSessionSubtitle => "会话",
         L10nKey::PanelProcessesSubtitle => "进程",
         L10nKey::PanelPortsSubtitle => "端口",
+        L10nKey::PanelLatency => "延迟",
         L10nKey::PanelPortsUnsupported => "对端的 tty7-server 太旧，列不出端口。",
         L10nKey::PanelPortsProbeFailed => "没能查出这个窗格在监听什么。",
         L10nKey::PanelPortsRestricted => "这里有以其他用户身份运行的进程，看不到它们的端口。",
@@ -1508,6 +1522,8 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::AppReopenTabFailed => "无法重新打开标签页：没有启动终端",
         L10nKey::AppOpenTerminalFailed => "无法打开终端：{error}",
         L10nKey::AppTabsNotRestored => "上次的 {count} 个标签页没能重新打开",
+        L10nKey::AppFullscreenEntered => "已进入全屏 —— 按 {key} 退出",
+        L10nKey::AppFullscreenEnteredNoKey => "已进入全屏 —— 窗口按钮在退出前会一直隐藏",
         L10nKey::LaunchWorkspacesLeftRunning => {
             "只恢复了这个窗口——还有 {count} 个工作区在后台运行，可从侧边栏重新打开。"
         }
@@ -1670,7 +1686,7 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::AppMenuCopyWorkingDirectory => "复制工作目录",
         L10nKey::AppMenuCopySessionId => "复制会话 ID",
         L10nKey::AppMenuForkSession => "Fork 会话",
-        L10nKey::AppMenuClosePaneTab => "关闭窗格 / 标签页",
+        L10nKey::AppMenuClosePaneTab => "关闭",
         L10nKey::AppMenuCloseOtherTabs => "关闭其他标签页",
         L10nKey::AppMenuCloseTabsRight => "关闭右侧标签页",
         L10nKey::AppMenuReopenClosedTab => "重新打开已关闭的标签页",

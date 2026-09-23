@@ -110,6 +110,23 @@ impl serde::Serialize for FontFeatures {
     }
 }
 
+/// One action's line in `keybindings`.
+///
+/// The two shapes mean different things, so a save writes back whichever one
+/// was read.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum KeybindingOverride {
+    /// `"NextTab": "cmd-shift-]"` — a chord *beside* the ones the action
+    /// already has, the way VS Code, Zed and kitty read a line like it (#868).
+    /// Empty unbinds the action, which is what `""` has always meant here.
+    Add(String),
+    /// `"NextTab": ["cmd-shift-]"]` — exactly these chords, replacing the
+    /// default and the preset's. `[]` unbinds. This is what the Settings page
+    /// writes, because recording a shortcut there sets it.
+    Exact(Vec<String>),
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
@@ -150,7 +167,16 @@ pub struct Config {
     pub window_backdrop: WindowBackdrop,
     #[serde(default = "default_true")]
     pub dim_inactive_panes: bool,
-    pub keybindings: HashMap<String, String>,
+    /// Lenient one entry at a time, for the same reason the nested keys below
+    /// are: this is hand-edited, and it used to be all-or-nothing. A single
+    /// value serde could not read — `"ActivateTab1": null`, a number, an object
+    /// — failed the whole `Config`, which quarantines `config.json` and starts
+    /// the app on built-in defaults; every rebinding in the file then read as
+    /// its shipped default, and the next settings write persisted those
+    /// defaults over what the user wrote (#901). A line that cannot be read is
+    /// skipped with a warning, and the rest of the map still binds.
+    #[serde(default, deserialize_with = "de_keybindings")]
+    pub keybindings: HashMap<String, KeybindingOverride>,
     #[serde(default = "default_preset")]
     pub keybinding_preset: String,
     #[serde(default = "default_prefix")]
@@ -1193,6 +1219,37 @@ fn default_sidebar_width() -> f32 {
 
 pub const MAX_SCROLLBACK: usize = 100_000;
 
+/// `keybindings`, read one line at a time.
+///
+/// [`de_lenient`] is all-or-nothing per field, which for a map means one bad
+/// line throwing away every good one. Here each entry stands on its own: the
+/// ones that name a shortcut or a list of shortcuts bind, the ones that do not
+/// are logged and dropped. A `keybindings` that is not an object at all falls
+/// back to an empty map rather than failing the file.
+fn de_keybindings<'de, D>(deserializer: D) -> Result<HashMap<String, KeybindingOverride>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    let serde_json::Value::Object(entries) = value else {
+        log::warn!("ignoring `keybindings` {value}: expected an object of action name to shortcut");
+        return Ok(HashMap::new());
+    };
+    let mut bindings = HashMap::with_capacity(entries.len());
+    for (action, raw) in entries {
+        match KeybindingOverride::deserialize(&raw) {
+            Ok(binding) => {
+                bindings.insert(action, binding);
+            }
+            Err(e) => log::warn!(
+                "ignoring keybinding for {action:?}: {raw} is not a shortcut, \
+                 a list of shortcuts, or \"\" to unbind ({e})"
+            ),
+        }
+    }
+    Ok(bindings)
+}
+
 pub(crate) fn de_lenient<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -1927,6 +1984,53 @@ mod tests {
         assert_eq!(cfg.font_family, "Hack");
         assert_eq!(cfg.theme_preset, "light");
         assert!(cfg.keybindings.is_empty());
+    }
+
+    #[test]
+    fn keybindings_take_a_chord_or_a_list_and_write_back_what_they_read() {
+        // A string is the shape every config written before #868 has, from the
+        // Settings page and by hand; a list is the one that replaces an
+        // action's chords outright. Both have to load, and a save must not turn
+        // one into the other — the two mean different things.
+        let written = serde_json::json!({
+            "NextTab": "cmd-shift-]",
+            "AlternatePaste": "",
+            "PrevTab": ["cmd-shift-[", "ctrl-shift-tab"],
+            "SplitRight": [],
+        });
+        let cfg: Config =
+            serde_json::from_value(serde_json::json!({ "keybindings": written.clone() }))
+                .expect("both shapes load");
+        assert_eq!(cfg.keybindings.len(), 4);
+        assert_eq!(serde_json::to_value(&cfg.keybindings).unwrap(), written);
+    }
+
+    #[test]
+    fn a_keybinding_line_that_cannot_be_read_does_not_take_the_config_with_it() {
+        // #901: one unreadable line used to fail the whole `Config`. The loader
+        // then quarantines config.json and starts on built-in defaults, so
+        // every rebinding in the file — the point of the file — came back as
+        // the shipped default, and the next settings write made that permanent.
+        let cfg: Config = serde_json::from_str(
+            r#"{"font_size": 20.0,
+                "keybindings": {"ActivateTab1": null, "ActivateTab2": 2,
+                                "ActivateTab3": {"key": "alt-shift-3"},
+                                "ActivateTab4": [], "NextTab": "ctrl-alt-]"}}"#,
+        )
+        .expect("a bad keybinding line must not fail the file");
+        assert_eq!(cfg.font_size, 20.0, "the rest of the file still loads");
+        assert_eq!(
+            serde_json::to_value(&cfg.keybindings).unwrap(),
+            serde_json::json!({"ActivateTab4": [], "NextTab": "ctrl-alt-]"}),
+            "the readable lines survive and the unreadable ones are dropped"
+        );
+
+        // And a `keybindings` that is not a map at all is no reason to hand
+        // the user back default fonts, themes and everything else.
+        let odd: Config = serde_json::from_str(r#"{"font_size": 20.0, "keybindings": []}"#)
+            .expect("a keybindings of the wrong shape must not fail the file");
+        assert_eq!(odd.font_size, 20.0);
+        assert!(odd.keybindings.is_empty());
     }
 
     fn pin_config_dir() {
