@@ -32,49 +32,36 @@
 use std::ffi::{CStr, CString, OsStr};
 use std::os::unix::ffi::OsStrExt as _;
 
-/// Appended to the re-executed image's arguments. It stops a second attempt
-/// when the first one did not take — without it, a kernel that accepts the
-/// attribute but ignores it would have the daemon re-executing forever. An
-/// argument rather than an environment variable so it is not inherited by
-/// every shell the daemon starts.
+/// Appended to the re-executed image's arguments, so it does not re-execute
+/// again. An argument rather than an environment variable so it is not
+/// inherited by every shell the daemon starts.
+///
+/// This is the only guard, on purpose. Asking whether the daemon already
+/// answers for itself cannot tell the two cases apart:
+/// `responsibility_get_pid_responsible_for_pid` reports a process as its own
+/// responsible process both when it truly is and when the one it inherited has
+/// exited — which is exactly the state a daemon outliving its GUI is in, and
+/// exactly the one a handoff is meant to repair. So every image start re-execs
+/// once; after a handoff that is one more `exec`, and it is cheap.
 pub const DISCLAIMED_FLAG: &str = "--responsibility-disclaimed";
 
+#[cfg(test)]
 type ResponsibleFor = unsafe extern "C" fn(libc::pid_t) -> libc::pid_t;
 type SetDisclaim = unsafe extern "C" fn(*mut libc::posix_spawnattr_t, libc::c_int) -> libc::c_int;
 
 /// Re-execute this process with its inherited responsibility disclaimed,
-/// unless it already answers for itself. Returns only when no re-exec
-/// happened; on success this process is already the new image.
+/// unless this image is already the result of that. Returns only when no
+/// re-exec happened; on success this process is already the new image.
 pub fn disclaim_inherited() {
-    let Some(responsible_for) =
-        (unsafe { lookup::<ResponsibleFor>(c"responsibility_get_pid_responsible_for_pid") })
-    else {
-        log::debug!("responsibility SPI unavailable; the daemon keeps its launcher's attribution");
-        return;
-    };
-    let pid = unsafe { libc::getpid() };
-    let responsible = unsafe { responsible_for(pid) };
     let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
-
     if args.iter().any(|arg| arg == DISCLAIMED_FLAG) {
-        if responsible == pid {
-            log::info!("the daemon is its own responsible process");
-        } else {
-            log::warn!(
-                "disclaiming responsibility did not take (responsible pid {responsible}); \
-                 panes stay attributed to the process that started the daemon"
-            );
-        }
+        log::info!("the daemon disclaimed its launcher's responsibility");
         return;
     }
-    if responsible == pid {
-        return;
-    }
-
     let Some(set_disclaim) =
         (unsafe { lookup::<SetDisclaim>(c"responsibility_spawnattrs_setdisclaim") })
     else {
-        log::debug!("responsibility_spawnattrs_setdisclaim unavailable");
+        log::debug!("responsibility SPI unavailable; the daemon keeps its launcher's attribution");
         return;
     };
     let exe = match std::env::current_exe() {
@@ -87,7 +74,7 @@ pub fn disclaim_inherited() {
 
     let error = reexec(&exe, &args, set_disclaim);
     log::warn!(
-        "could not re-exec {} to disclaim responsibility (responsible pid {responsible}): {error}",
+        "could not re-exec {} to disclaim responsibility: {error}",
         exe.display()
     );
 }
