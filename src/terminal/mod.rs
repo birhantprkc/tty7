@@ -1,5 +1,6 @@
 mod boxdraw;
 mod cmd_editor;
+mod command_cursor;
 mod completion;
 pub mod element;
 pub mod fps;

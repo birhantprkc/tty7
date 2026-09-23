@@ -2312,7 +2312,18 @@ pub(crate) fn pump_auth_sheets(cx: &mut gpui::App) {
         inbox.append(&mut parked);
     }
 
+    // First take down any sheet whose attempt has stopped listening, so the
+    // host's gate is free again for a prompt that is still wanted.
+    retract_abandoned_sheets(cx);
+
     for pending in inbox {
+        // Nobody is waiting for this answer any more. Raising it would put up
+        // a sheet whose password goes nowhere; parking it would bring that
+        // sheet up later, behind whichever one is on screen now (#820).
+        if pending.is_abandoned() {
+            log::debug!("dropping a routed auth prompt its attempt gave up on");
+            continue;
+        }
         let host = pending.host;
         if !cx.default_global::<RemoteLinks>().auth.request(host) {
             park(pending);
@@ -2327,6 +2338,29 @@ pub(crate) fn pump_auth_sheets(cx: &mut gpui::App) {
                 }
             }
         }
+    }
+}
+
+/// A routed sheet stays up until someone answers it, and nothing on screen
+/// knows when the attempt that raised it has given up — so the pump looks, and
+/// takes those down itself.
+fn retract_abandoned_sheets(cx: &mut gpui::App) {
+    if !cx.has_global::<crate::ui::windows::WindowRegistry>() {
+        return;
+    }
+    for (workspace, app) in crate::ui::windows::WindowRegistry::open_windows(cx) {
+        let Some(app) = app.upgrade() else {
+            continue;
+        };
+        if !app.read(cx).routed_auth_abandoned() {
+            continue;
+        }
+        let Some(handle) = crate::ui::windows::WindowRegistry::window_for(cx, workspace) else {
+            continue;
+        };
+        let _ = handle.update(cx, |_, window, cx| {
+            app.update(cx, |app, cx| app.retract_abandoned_routed_auth(window, cx))
+        });
     }
 }
 
@@ -3239,6 +3273,47 @@ mod tests {
                 ("error", crate::daemon::ssh::AUTH_DECLINED),
             ],
         )
+    }
+
+    /// #820. A reconnect that kept asking while nobody was at the keyboard
+    /// left one prompt behind per attempt, parked behind the sheet on screen.
+    /// Only the newest had anyone waiting on it; the rest came up one after
+    /// another once the user was back, and answering them went nowhere. The
+    /// pump has to drop a prompt its attempt gave up on — and still keep the
+    /// one that is live.
+    #[gpui::test]
+    fn the_pump_drops_a_prompt_its_attempt_gave_up_on(cx: &mut gpui::TestAppContext) {
+        let host = HostId(0x0820_0820);
+        let prompt = || crate::daemon::protocol::AuthPromptKind::Password {
+            user: "me".into(),
+            host: "dropped-box".into(),
+        };
+        let (stale, _stale_rx, stale_asker) = remote_connect::PendingAuth::for_test(host, prompt());
+        let (live, _live_rx, _live_asker) = remote_connect::PendingAuth::for_test(host, prompt());
+        drop(stale_asker);
+        {
+            let _turn = remote_connect::claim_mailbox();
+            remote_connect::post_pending_auth(stale);
+            remote_connect::post_pending_auth(live);
+        }
+
+        cx.update(|cx| {
+            crate::ui::windows::WindowRegistry::init(cx);
+            pump_auth_sheets(cx);
+        });
+
+        // Under the mailbox turn, so no other test's pump is holding ours
+        // half-way through.
+        let _turn = remote_connect::claim_mailbox();
+        let mut parked = PARKED.lock().unwrap();
+        let ours: Vec<_> = parked.iter().filter(|p| p.host == host).collect();
+        assert_eq!(
+            ours.len(),
+            1,
+            "the live prompt waits for a window; the abandoned one is gone"
+        );
+        assert!(!ours[0].is_abandoned(), "and the one kept is the live one");
+        parked.retain(|p| p.host != host);
     }
 
     /// #820. Closing the sheet is an answer. The backoff put the same question
