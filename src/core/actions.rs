@@ -111,6 +111,8 @@ actions!(
         DocumentWidthThird,
         DocumentWidthHalf,
         DocumentWidthTwoThirds,
+        ToggleDocumentPreview,
+        ToggleDocumentWrap,
         EditorSave,
         OpenSshProfiles,
         RestartSshSession,

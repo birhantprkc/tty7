@@ -236,6 +236,17 @@ pub struct Config {
     /// impression than one they asked for.
     #[serde(default)]
     pub scm_graph_expanded: bool,
+    /// Whether a file opens in the code panel with soft wrap on. Not a
+    /// setting anyone picks up front: it is whatever the status bar's Wrap
+    /// toggle (or `ToggleDocumentWrap`) was last left at, so the next file
+    /// opens the way the last one was being read.
+    #[serde(default)]
+    pub editor_soft_wrap: bool,
+    /// Whether a Markdown file opens rendered rather than as source — the last
+    /// state of the Preview / Edit toggle, remembered the same way as
+    /// [`Self::editor_soft_wrap`]. Files that are not Markdown ignore it.
+    #[serde(default)]
+    pub editor_markdown_preview: bool,
     #[serde(default, deserialize_with = "de_lenient")]
     pub sidebar_grouping: SidebarGrouping,
     /// Which sidebar groups are folded shut, by group key: the repo root the
@@ -654,6 +665,8 @@ impl Default for Config {
             document_layout: DocumentLayout::default(),
             document_ratio: default_document_ratio(),
             scm_graph_expanded: false,
+            editor_soft_wrap: false,
+            editor_markdown_preview: false,
             sidebar_grouping: SidebarGrouping::Repo,
             sidebar_collapsed_groups: Vec::new(),
             sidebar_diff_preview: true,

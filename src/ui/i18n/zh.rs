@@ -1431,6 +1431,8 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::CmdDocumentWidthThird => "文档：三分之一宽",
         L10nKey::CmdDocumentWidthHalf => "文档：一半宽",
         L10nKey::CmdDocumentWidthTwoThirds => "文档：三分之二宽",
+        L10nKey::CmdToggleDocumentPreview => "文档：切换 Markdown 预览",
+        L10nKey::CmdToggleDocumentWrap => "文档：切换自动换行",
         L10nKey::CmdGitCommit => "Git：提交",
         L10nKey::CmdGitStageAll => "Git：暂存全部更改",
         L10nKey::CmdGitUnstageAll => "Git：取消暂存全部更改",

@@ -520,6 +520,10 @@ pub(crate) fn default_bindings() -> Vec<(&'static str, &'static str)> {
         ("DocumentWidthThird", ""),
         ("DocumentWidthHalf", ""),
         ("DocumentWidthTwoThirds", ""),
+        // Unbound for the same reason, and because the obvious chords belong
+        // to the editor that has the focus when you would reach for them.
+        ("ToggleDocumentPreview", ""),
+        ("ToggleDocumentWrap", ""),
         // Implemented, dispatchable, and until now unbindable: `set_binding`
         // only fills slots that exist here, so `"ShowRightPanelInfo": "ctrl-1"`
         // in config.json was dropped without a word, and the Keybindings page —
@@ -720,6 +724,14 @@ fn authored_entry(action: &str) -> Option<(CommandGroup, String)> {
         "DocumentWidthTwoThirds" => (
             CommandGroup::View,
             t(L10nKey::CmdDocumentWidthTwoThirds).to_string(),
+        ),
+        "ToggleDocumentPreview" => (
+            CommandGroup::View,
+            t(L10nKey::CmdToggleDocumentPreview).to_string(),
+        ),
+        "ToggleDocumentWrap" => (
+            CommandGroup::View,
+            t(L10nKey::CmdToggleDocumentWrap).to_string(),
         ),
         "ShowRightPanelInfo" => (
             CommandGroup::View,
@@ -1412,6 +1424,8 @@ fn make_binding(action: &str, keystroke: &str) -> Option<KeyBinding> {
         "DocumentWidthThird" => KeyBinding::new(keystroke, DocumentWidthThird, None),
         "DocumentWidthHalf" => KeyBinding::new(keystroke, DocumentWidthHalf, None),
         "DocumentWidthTwoThirds" => KeyBinding::new(keystroke, DocumentWidthTwoThirds, None),
+        "ToggleDocumentPreview" => KeyBinding::new(keystroke, ToggleDocumentPreview, None),
+        "ToggleDocumentWrap" => KeyBinding::new(keystroke, ToggleDocumentWrap, None),
         "EditorSave" => KeyBinding::new(keystroke, EditorSave, None),
         "OpenSshProfiles" => KeyBinding::new(keystroke, OpenSshProfiles, None),
         "RestartSshSession" => KeyBinding::new(keystroke, RestartSshSession, None),
