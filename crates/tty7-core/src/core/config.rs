@@ -1010,6 +1010,11 @@ pub fn write_atomic_private(path: &std::path::Path, bytes: &[u8]) -> std::io::Re
 
 fn write_atomic_mode(path: &std::path::Path, bytes: &[u8], private: bool) -> std::io::Result<()> {
     use std::io::Write as _;
+    // Renaming over a symlink replaces the link itself, so a config.json
+    // symlinked into a dotfiles repo would silently turn into a plain file and
+    // stop syncing. Write next to (and rename over) the file it points at.
+    let resolved = resolve_symlinks(path);
+    let path = resolved.as_path();
     let dir = path.parent().unwrap_or_else(|| std::path::Path::new("."));
     let tmp = dir.join(format!(
         ".{}.tmp.{}",
@@ -1038,6 +1043,25 @@ fn write_atomic_mode(path: &std::path::Path, bytes: &[u8], private: bool) -> std
             Err(e)
         }
     }
+}
+
+/// Follows `path` through any chain of symlinks to the file it finally names,
+/// which need not exist yet. Gives up after a bounded number of hops, so a
+/// symlink loop falls back to writing over the last link reached.
+fn resolve_symlinks(path: &std::path::Path) -> PathBuf {
+    const MAX_HOPS: usize = 40;
+
+    let mut resolved = path.to_path_buf();
+    for _ in 0..MAX_HOPS {
+        let Ok(target) = std::fs::read_link(&resolved) else {
+            break;
+        };
+        resolved = match resolved.parent() {
+            Some(parent) => parent.join(target),
+            None => target,
+        };
+    }
+    resolved
 }
 
 pub fn config_dir_path() -> Option<PathBuf> {
@@ -1653,6 +1677,52 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_atomic_writes_through_a_symlink_instead_of_replacing_it() {
+        let dir = TestDir::new("symlink");
+        let real = dir.path().join("dotfiles-config.json");
+        std::fs::write(&real, b"old").unwrap();
+        let link = dir.path().join("config.json");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        write_atomic(&link, b"new").unwrap();
+        assert!(
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "config.json must stay a symlink"
+        );
+        assert_eq!(std::fs::read(&real).unwrap(), b"new");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_atomic_follows_relative_and_dangling_symlinks() {
+        let dir = TestDir::new("symlink-relative");
+        std::fs::create_dir(dir.path().join("dotfiles")).unwrap();
+        let link = dir.path().join("config.json");
+        // Relative to the link's own directory, and not created yet.
+        std::os::unix::fs::symlink("dotfiles/config.json", &link).unwrap();
+        write_atomic(&link, b"fresh").unwrap();
+        assert!(
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(
+            std::fs::read(dir.path().join("dotfiles/config.json")).unwrap(),
+            b"fresh"
+        );
+        let leftover: Vec<_> = std::fs::read_dir(dir.path().join("dotfiles"))
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp."))
+            .collect();
+        assert!(leftover.is_empty(), "temp file should be renamed away");
     }
 
     #[test]
