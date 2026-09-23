@@ -72,7 +72,7 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::Close => "关闭",
         L10nKey::QuitStopServerTitle => "退出并停止 server？",
         L10nKey::QuitStopServerBody => {
-            "这会退出 tty7 并停止后台 server，shell 里正在跑的东西都会被终止。标签页和布局会保留，下次启动时以全新的 shell 打开。（只关窗口的话应用收进托盘，shell 继续跑。）"
+            "这会退出 tty7 并停止tty7 server，shell 里正在跑的东西都会被终止。标签页和布局会保留，下次启动时以全新的 shell 打开。（只关窗口的话应用收进托盘，shell 继续跑。）"
         }
         L10nKey::QuitAndStop => "退出并停止",
         L10nKey::CloseSshConnectionTitle => "关闭这个 SSH 连接？",
@@ -619,16 +619,16 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         }
         L10nKey::SettingsUpdateChannelStable => "稳定版",
         L10nKey::SettingsUpdateChannelNightly => "每夜构建",
-        L10nKey::SettingsDaemonStale => "后台 后台会话服务 仍运行在 {build}。",
+        L10nKey::SettingsDaemonStale => "tty7 server 仍运行在 {build}。",
         L10nKey::SettingsDaemonStaleDesc => {
-            "tty7 是原地升级的：界面已是新版，pane 还由旧版 后台会话服务 托管。重启 后台会话服务 换成新版，代价是 pane 里正在跑的进程全部结束。不急，挑 pane 空闲时再重启。"
+            "tty7 是原地升级的：界面已是新版，pane 还由旧版 tty7 server 托管。重启 tty7 server 换成新版，代价是 pane 里正在跑的进程全部结束。不急，挑 pane 空闲时再重启。"
         }
         L10nKey::UpdateDialogTitle => "有可用更新",
         L10nKey::UpdateDialogDetail => {
-            "tty7 {version} 已发布，你现在是 {current}。安装会重启应用；后台 server 不动，pane 里的东西都还在。"
+            "tty7 {version} 已发布，你现在是 {current}。安装会重启应用；tty7 server 不动，pane 里的东西都还在。"
         }
         L10nKey::UpdateDialogDetailWindows => {
-            "tty7 {version} 已发布，你现在是 {current}。安装会重启应用和后台 server：pane 里的进程会被结束，标签页和布局以全新的 shell 恢复。"
+            "tty7 {version} 已发布，你现在是 {current}。安装会重启应用和tty7 server：pane 里的进程会被结束，标签页和布局以全新的 shell 恢复。"
         }
         L10nKey::UpdateDialogDetailManual => "tty7 {version} 已发布，你现在是 {current}。{hint}",
         L10nKey::UpdateDialogCannotSelfUpdate => "这份安装无法自行更新。",
@@ -670,11 +670,9 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
             "让脚本和 AI Agent 使用随应用提供的 tty7 命令。下次启动生效；关闭后不会移除已安装的命令。"
         }
         L10nKey::SettingsInstallCliOnPath => "将 `tty7` 命令安装到 PATH",
-        L10nKey::SettingsServer => "后台会话服务",
-        L10nKey::SettingsServerDesc => {
-            "在后台维持终端会话。重启会结束这台计算机上的所有 Shell 进程，并按原布局打开新的 Shell。"
-        }
-        L10nKey::SettingsRestartServer => "重启后台会话服务…",
+        L10nKey::SettingsServer => "tty7 server",
+        L10nKey::SettingsServerDesc => "管理这台计算机上的终端会话，让会话在后台持续运行。",
+        L10nKey::SettingsRestartServer => "重启 tty7 server…",
         L10nKey::SettingsAppHttpProxy => "更新代理",
         L10nKey::SettingsAppHttpProxyDesc => {
             "仅用于 tty7 自身的更新检查和下载，不影响面板中运行的程序。留空则跟随系统代理。"
@@ -1466,23 +1464,23 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::CmdQuickConnect => "连接到“{target}”",
         L10nKey::CmdQuickConnectSaveProfile => "将“{target}”保存为主机配置…",
         L10nKey::CmdRecent => "最近使用",
-        L10nKey::AppRestartServerTitle => "重启 server？",
-        L10nKey::AppRestartServerFailed => "无法重启后台 server：{error}",
+        L10nKey::AppRestartServerTitle => "重启 tty7 server？",
+        L10nKey::AppRestartServerFailed => "无法重启tty7 server：{error}",
         L10nKey::AppRestartServerMismatchDetail => {
-            "server 用协议 {protocol}（构建 v{build}），此应用用 {ours}，标签页取不出来。\n\n退出：什么都不变，server 和 shell 继续运行。\n重启：标签页带全新 shell 回来，现在跑着的东西会被杀掉。"
+            "tty7 server 用协议 {protocol}（构建 v{build}），此应用用 {ours}，标签页取不出来。\n\n退出：什么都不变，tty7 server 和 shell 继续运行。\n重启：标签页带全新 shell 回来，现在跑着的东西会被杀掉。"
         }
         L10nKey::AppRestartServerDialectDetail => {
-            "server 用 control 方言 v{dialect}（构建 v{build}），此应用用 v{ours}，每个窗口都开成空的。\n\n退出：什么都不变，server 和 shell 继续运行。\n重启：标签页带全新 shell 回来，现在跑着的东西会被杀掉。"
+            "tty7 server 用 control 方言 v{dialect}（构建 v{build}），此应用用 v{ours}，每个窗口都开成空的。\n\n退出：什么都不变，tty7 server 和 shell 继续运行。\n重启：标签页带全新 shell 回来，现在跑着的东西会被杀掉。"
         }
         L10nKey::AppRestartServerDialectNewerDetail => {
-            "server 用 control 方言 v{dialect}（构建 v{build}），此应用用 v{ours}，每个窗口都开成空的。\n\n退出并装上更新的构建：真正的解法，shell 全都还在。\n重启：标签页带全新 shell 回来，现在跑着的东西会被杀掉。"
+            "tty7 server 用 control 方言 v{dialect}（构建 v{build}），此应用用 v{ours}，每个窗口都开成空的。\n\n退出并装上更新的构建：真正的解法，shell 全都还在。\n重启：标签页带全新 shell 回来，现在跑着的东西会被杀掉。"
         }
         L10nKey::AppRestartServerOldDetail => {
-            "server 早于版本握手，此应用无从得知它说的是什么。\n\n退出：什么都不变，server 和 shell 继续运行。\n重启：标签页带全新 shell 回来，现在跑着的东西会被杀掉。"
+            "tty7 server 早于版本握手，此应用无从得知它说的是什么。\n\n退出：什么都不变，tty7 server 和 shell 继续运行。\n重启：标签页带全新 shell 回来，现在跑着的东西会被杀掉。"
         }
         L10nKey::AppRestart => "重启",
         L10nKey::AppRestartServerNoServer => {
-            "{label} 没有自己的 server 可重启——它是本机通过 --stdio 运行的程序。请改为停止其工作区。"
+            "{label} 没有自己的 tty7 server 可重启——它是本机通过 --stdio 运行的程序。请改为停止其工作区。"
         }
         L10nKey::AppRestartServerBody => {
             "这会结束本机上所有 shell。标签页和布局会保留，并以全新的 shell 重新打开。"
@@ -1616,10 +1614,10 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::Replace => "覆盖",
         L10nKey::SftpErrorInvalidOctalMode => "无效的八进制模式",
         L10nKey::SettingsDaemonStaleDescInPlace => {
-            "tty7 是原地更新的：应用是新的，面板还跑在旧版上。后台会话服务 可以不停机就换成新版，shell 直接延续下来。用 tty7 内置 SSH 客户端的面板除外——那些连接会断开，需要重新打开。"
+            "tty7 是原地更新的：应用是新的，面板还跑在旧版上。tty7 server 可以不停机就换成新版，shell 直接延续下来。用 tty7 内置 SSH 客户端的面板除外——那些连接会断开，需要重新打开。"
         }
         L10nKey::AppRestartServerBodyInPlace => {
-            "后台 server 会原地把自己换成当前这个版本：shell 继续运行，窗口稍后自动连回去。用 tty7 内置 SSH 客户端的面板除外——那些连接会断开，需要重新打开。"
+            "tty7 server 会原地把自己换成当前这个版本：shell 继续运行，窗口稍后自动连回去。用 tty7 内置 SSH 客户端的面板除外——那些连接会断开，需要重新打开。"
         }
         L10nKey::PaneRestoredScreenBanner => {
             "已恢复的画面 —— 下面是新的 shell，上面的内容都已不在运行"
@@ -1708,7 +1706,7 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::AppMenuKeyboardShortcuts => "键盘快捷键",
         L10nKey::AppMenuJoinDiscord => "加入 Discord",
         L10nKey::AppMenuReportIssue => "报告问题…",
-        L10nKey::AppMenuRestartServer => "重启 后台会话服务…",
+        L10nKey::AppMenuRestartServer => "重启 tty7 server…",
         L10nKey::WindowUntitled => "未命名",
         L10nKey::TrayShowTty7 => "显示 tty7",
         L10nKey::TrayNotifications => "通知",
@@ -1745,7 +1743,7 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::AppMenuEnterFullscreen => "进入全屏",
         L10nKey::HomeTimeOverWeekAgo => "一周多前",
         L10nKey::Search => "搜索",
-        L10nKey::SettingsDaemonStaleRestart => "重启 后台会话服务",
+        L10nKey::SettingsDaemonStaleRestart => "重启 tty7 server",
         L10nKey::SettingsNoneLower => "无",
         L10nKey::SettingsSearchCommandLineToolTitle => "命令行工具",
         L10nKey::TabContextMarkUnread => "标记为未读",

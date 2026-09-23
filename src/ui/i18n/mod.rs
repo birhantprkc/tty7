@@ -1568,6 +1568,7 @@ mod tests {
             L10nKey::HostOpsError,
             L10nKey::SftpTransferProgress,
             // Product names.
+            L10nKey::SettingsServer,
             L10nKey::SettingsAgentClaudeCode,
             L10nKey::SettingsAgentCodex,
             L10nKey::SettingsAgentTraeCode,
