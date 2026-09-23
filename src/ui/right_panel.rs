@@ -35,6 +35,12 @@ fn right_panel_tabs_floor(window: &Window, cx: &gpui::App) -> f32 {
 /// The tab row's leading inset, and the 2px gaps it puts between the three
 /// tabs, the spacer and the chrome.
 const TAB_ROW_LEAD: f32 = 4.;
+
+/// How tall the tab row is where it sits below the title bar (Windows and
+/// Linux): the tab's 26px hover pill plus 2px either side. A full title-bar
+/// height here stacked a second 40px band under the first and left the labels
+/// sitting well down from the window's top edge.
+const TAB_ROW_HEIGHT: f32 = TILE_SIZE_SM + 6.;
 const TAB_ROW_GAPS: f32 = 4. * 2.;
 
 /// How wide a panel edge is to grab. Both edges a window can drag — the tab
@@ -652,7 +658,7 @@ impl Tty7App {
         );
         row.flex_none()
             .h(px(if tabs.is_some() {
-                crate::ui::app::TITLE_BAR_HEIGHT
+                TAB_ROW_HEIGHT
             } else {
                 32.
             }))
