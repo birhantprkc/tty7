@@ -1807,9 +1807,7 @@ impl Tty7App {
                     cx.theme().sidebar_foreground
                 })
                 .when(selected, |d| d.font_weight(gpui::FontWeight::MEDIUM))
-                .when(row.entry.ignored, |d| {
-                    d.italic().text_color(muted.opacity(0.7))
-                })
+                .when(row.entry.ignored, |d| d.italic().text_color(muted))
                 // Ordinary changes belong in the status badge. Only a conflict
                 // should turn an entire filename into an attention signal.
                 .when_some(deco.tint, |d, status| {
