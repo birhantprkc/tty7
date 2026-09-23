@@ -837,6 +837,10 @@ pub struct Tty7App {
     /// home page is otherwise perfectly still: it cost more than a live
     /// terminal did, on a window with nothing open in it.
     pub(crate) home_cursor_on: bool,
+    /// The blink phase of a working agent's status dot. Driven by the same
+    /// half-second tick as the home cursor, and only while some tab has an
+    /// agent at work — two repaints a second, not an animation's sixty.
+    pub(crate) working_dot_on: bool,
     pub(crate) shells: ShellInventory,
     pub(crate) shells_host: HostId,
     pub(crate) loopback_panel: LoopbackForwardPanelState,
@@ -1476,6 +1480,7 @@ impl Tty7App {
             record_gen: 0,
             home_focus: cx.focus_handle(),
             home_cursor_on: true,
+            working_dot_on: true,
             shells: ShellInventory::default(),
             shells_host: HostId::LOCAL,
             loopback_panel: LoopbackForwardPanelState {
@@ -1579,6 +1584,16 @@ impl Tty7App {
                     .update(cx, |this, cx| {
                         if this.tabs.is_empty() {
                             this.home_cursor_on = !this.home_cursor_on;
+                            cx.notify();
+                        }
+                        let working = this.tabs.iter().any(|tab| {
+                            tab.agent_status(cx)
+                                == Some(crate::core::cli_agent::AgentStatus::Working)
+                        });
+                        // Keep blinking while an agent works; once none does,
+                        // settle on "on" with one last frame and go quiet.
+                        if working || !this.working_dot_on {
+                            this.working_dot_on = !this.working_dot_on || !working;
                             cx.notify();
                         }
                     })

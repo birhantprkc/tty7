@@ -981,7 +981,9 @@ pub(crate) fn workspace_avatar(
                 .text_color(cx.theme().foreground.opacity(0.65))
                 .child(initial),
         )
-        .children(dot.map(|rgb| Tty7App::status_dot(rgb, 0, size, cx.theme().popover, false)))
+        .children(
+            dot.map(|rgb| Tty7App::status_dot(rgb, 0, size, cx.theme().popover, false, false)),
+        )
 }
 
 pub(crate) fn select_workspace_action(index: usize) -> Option<Box<dyn gpui::Action>> {
@@ -1321,6 +1323,7 @@ impl Tty7App {
         size: f32,
         ring: gpui::Hsla,
         hollow: bool,
+        faded: bool,
     ) -> gpui::AnyElement {
         let d = (size * 0.42).max(7.);
         // The halo was the surface itself, which is only a ring while the
@@ -1331,6 +1334,12 @@ impl Tty7App {
         let bg = match crate::ui::presets::surface_is_dark(ring) {
             true => gpui::white(),
             false => ring,
+        };
+        // The dim beat of a blink is a paler fill, still opaque: fading the
+        // whole badge let the avatar show through the dot and its ring.
+        let fill: gpui::Hsla = match faded {
+            true => bg.blend(gpui::Hsla::from(gpui::rgb(rgb)).opacity(0.4)),
+            false => gpui::rgb(rgb).into(),
         };
         if unread > 0 {
             let nd = (size * 0.72).max(13.0);
@@ -1343,7 +1352,7 @@ impl Tty7App {
                 .rounded_full()
                 .border_1()
                 .border_color(bg)
-                .bg(gpui::rgb(rgb))
+                .bg(fill)
                 .flex()
                 .items_center()
                 .justify_center()
@@ -1361,7 +1370,7 @@ impl Tty7App {
                 .rounded_full()
                 .border_2()
                 .border_color(bg)
-                .bg(gpui::rgb(rgb))
+                .bg(fill)
                 .when(hollow, |dot| {
                     dot.flex()
                         .items_center()
@@ -1401,9 +1410,13 @@ impl Tty7App {
         match agent {
             Some(agent) => {
                 let hollow = status == Some(crate::core::cli_agent::AgentStatus::Waiting);
-                let dot = status
-                    .and_then(|s| s.dot_rgb())
-                    .map(|rgb| Self::status_dot(rgb, unread, size, cx.theme().background, hollow));
+                let dot = status.and_then(|s| s.dot_rgb()).map(|rgb| {
+                    // A working agent's dot blinks, so a column of tabs
+                    // says at a glance which ones are still going.
+                    let faded = status == Some(crate::core::cli_agent::AgentStatus::Working)
+                        && !self.working_dot_on;
+                    Self::status_dot(rgb, unread, size, cx.theme().background, hollow, faded)
+                });
                 // Which agent this is, and what it wants, were carried entirely
                 // by a brand hue and a nine-pixel dot. Say it in words too.
                 let tip = match agent_status_label(status) {
@@ -1453,7 +1466,14 @@ impl Tty7App {
                     ),
                 )
                 .when_some(ssh, |b, rgb| {
-                    b.child(Self::status_dot(rgb, 0, size, cx.theme().background, false))
+                    b.child(Self::status_dot(
+                        rgb,
+                        0,
+                        size,
+                        cx.theme().background,
+                        false,
+                        false,
+                    ))
                 })
                 .into_any_element(),
         }
