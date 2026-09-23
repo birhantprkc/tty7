@@ -144,6 +144,10 @@ struct Row {
     preempted: bool,
     adopt: Option<Box<RemoteWorkspaceRow>>,
     remote_id: Option<WorkspaceId>,
+    /// Which `SelectWorkspaceN` reaches this workspace, zero-based — the
+    /// stable number the Workspaces menu shows too (#760). The list itself
+    /// stays most-recently-used first; the number is what does not move.
+    slot: Option<usize>,
     tabs: Vec<TabRow>,
 }
 
@@ -683,6 +687,8 @@ impl Tty7App {
 
         let mut groups: Vec<Group> = Vec::new();
         let mut index: HashMap<String, usize> = HashMap::new();
+        let slots = crate::ui::windows::menu_order(cx);
+        let slot_of = |id: WorkspaceId| slots.iter().position(|(slot, _)| *slot == id);
         {
             let app: &App = cx;
             let store = WorkspaceStore::all(app);
@@ -746,6 +752,7 @@ impl Tty7App {
                     preempted: false,
                     adopt: None,
                     remote_id: w.host.as_ref().map(|r| r.workspace),
+                    slot: slot_of(w.id),
                     tabs: self.tab_rows_for(w.id, app),
                 });
             }
@@ -824,6 +831,7 @@ impl Tty7App {
                     preempted: false,
                     adopt: None,
                     remote_id: None,
+                    slot: slot_of(current),
                     tabs: self.tab_rows_for(current, app),
                 },
             );
@@ -872,6 +880,7 @@ impl Tty7App {
                     preempted: false,
                     adopt: None,
                     remote_id: None,
+                    slot: None,
                     tabs: self.tab_rows_for(ws.id, app),
                 })
                 .collect();
@@ -2429,6 +2438,16 @@ impl Tty7App {
                             }),
                     ),
             )
+            // The workspace's number — what Go to Workspace N and the
+            // Workspaces menu call it — so the slot a shortcut reaches can be
+            // read off the list that does not sort by it (#760).
+            .children(row.slot.map(|slot| {
+                div()
+                    .flex_shrink_0()
+                    .text_xs()
+                    .text_color(muted)
+                    .child((slot + 1).to_string())
+            }))
             // A word, not a chip: a filled pill reads as a button, and these
             // are states. Only "taken over" keeps a colour — it is the one
             // that warns.
@@ -3052,6 +3071,7 @@ impl Group {
                 preempted: false,
                 adopt: Some(Box::new(r.clone())),
                 remote_id: Some(r.id),
+                slot: None,
                 // A workspace this client has never adopted has no local id to
                 // hang a machine-tree lookup on. The tab column says so.
                 tabs: Vec::new(),
@@ -3490,6 +3510,7 @@ mod tests {
             preempted: false,
             adopt: None,
             remote_id: None,
+            slot: None,
             tabs,
         }
     }

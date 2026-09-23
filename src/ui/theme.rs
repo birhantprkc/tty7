@@ -144,18 +144,14 @@ fn window_menu_items(cx: &App) -> Vec<MenuItem> {
         MenuItem::separator(),
     ];
     let workspace_start = items.len();
-    let mut separated = false;
+    // Slot order, open and closed interleaved: the item's position is its
+    // number and its shortcut, so it cannot move when a window closes (#760).
+    // A closed one says so with its age instead.
     for (i, (id, open)) in order.iter().enumerate() {
         let Some(workspace) = store.get(*id) else {
             continue;
         };
         let Some(action) = slot_action(i) else { break };
-        if !open && !separated {
-            separated = true;
-            if items.len() > workspace_start {
-                items.push(MenuItem::Separator);
-            }
-        }
         let name = crate::ui::machine_mirror::display_name(cx, workspace)
             .unwrap_or_else(|| t(L10nKey::WindowUntitled).to_string());
         let label = if *open {
