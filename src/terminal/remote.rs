@@ -1379,15 +1379,22 @@ impl RemoteTerminal {
                             // this frame must be parsed into the old grid.
                             DaemonMsg::Size(ws) => {
                                 flush_batch!();
+                                // A live echo lands just before the shell's
+                                // SIGWINCH redraw; a replayed Size heads old
+                                // bytes that nothing is going to repaint.
+                                let shell_redraws = !replaying_state
+                                    && !local_conpty.load(Ordering::Relaxed)
+                                    && shell.lock().is_ok_and(|s| s.active && s.at_prompt);
                                 {
                                     let mut term = term.lock();
                                     if quit.load(Ordering::SeqCst) {
                                         return;
                                     }
-                                    term.resize(TermSize::new(
-                                        ws.cols as usize,
-                                        ws.rows as usize,
-                                    ));
+                                    super::prompt_reflow::resize(
+                                        &mut term,
+                                        TermSize::new(ws.cols as usize, ws.rows as usize),
+                                        shell_redraws,
+                                    );
                                 }
                                 proxy.send_event(AlacEvent::Wakeup);
                             }
@@ -1793,7 +1800,8 @@ impl RemoteTerminal {
         self.size = size;
         self.synced_cell = cell;
         if !echoed {
-            self.term.lock().resize(size);
+            let shell_redraws = !self.is_local_conpty() && self.at_prompt();
+            super::prompt_reflow::resize(&mut self.term.lock(), size, shell_redraws);
         }
 
         let win = win_size(size, cell_w, cell_h);
@@ -5714,6 +5722,89 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
         assert!(at, "at_prompt should become true after the Prompt report");
+    }
+
+    /// #654, end to end on the reader: a shell at its prompt (the daemon's
+    /// `Prompt` report) whose clock sits one column short of the edge, the
+    /// pane narrowed by several columns at a time and widened back, each step
+    /// followed by zsh's SIGWINCH redraw. Every live echo has to hand the
+    /// prompt back before reflowing, or each narrowing strands the head of the
+    /// old prompt and the widening joins them into a line of fragments.
+    #[test]
+    fn a_live_size_echo_at_a_prompt_leaves_one_prompt() {
+        use alacritty_terminal::grid::Dimensions as _;
+        use alacritty_terminal::index::{Column, Line};
+
+        crate::core::config::pin_test_config_dir();
+        let (client_side, mut daemon_side) = UnixStream::pair().unwrap();
+        let term = RemoteTerminal::from_stream(client_side, TermSize::new(98, 12)).unwrap();
+        // zsh 5.9's redraw for `PROMPT='[~] '` and an `RPROMPT` clock.
+        let redraw = |cols: u16, clock: &str| {
+            format!(
+                "\r\r\x1b[0m\x1b[J[~] \x1b[K\x1b[{}C{clock}\x1b[{}D",
+                cols - 13,
+                cols - 5
+            )
+            .into_bytes()
+        };
+        DaemonMsg::Prompt {
+            active: true,
+            at_prompt: true,
+            last_exit: Some(0),
+        }
+        .encode(&mut daemon_side)
+        .unwrap();
+        DaemonMsg::Output(redraw(98, "16:46:20"))
+            .encode(&mut daemon_side)
+            .unwrap();
+        for cols in [92, 86, 92, 98] {
+            DaemonMsg::Size(WinSize {
+                cols,
+                rows: 12,
+                cell_w: 8,
+                cell_h: 17,
+            })
+            .encode(&mut daemon_side)
+            .unwrap();
+            let clock = if cols == 98 { "16:46:33" } else { "16:46:2x" };
+            DaemonMsg::Output(redraw(cols, clock))
+                .encode(&mut daemon_side)
+                .unwrap();
+        }
+        daemon_side.flush().unwrap();
+
+        let text = || {
+            let t = term.term.lock();
+            let grid = t.grid();
+            let top = -(grid.history_size() as i32);
+            (top..grid.screen_lines() as i32)
+                .map(|line| {
+                    (0..grid.columns())
+                        .map(|col| grid[Line(line)][Column(col)].c)
+                        .collect::<String>()
+                        .trim_end()
+                        .to_string()
+                })
+                .filter(|row| !row.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        for _ in 0..400 {
+            if term.term.lock().columns() == 98 && text().contains("16:46:33") {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let text = text();
+        assert!(
+            text.contains("16:46:33"),
+            "the last redraw never landed:\n{text}"
+        );
+        assert_eq!(
+            text.matches("[~]").count(),
+            1,
+            "a narrowing stranded part of an old prompt:\n{text}"
+        );
     }
 
     #[test]
