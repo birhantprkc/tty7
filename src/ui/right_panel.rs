@@ -700,8 +700,8 @@ impl Tty7App {
                         }),
                 )
             })
-            .child(div().flex_1().min_w_0())
-            .when_some(trailing, |this, t| this.child(t))
+            // Leading, as on macOS: the tabs open the row and whatever the
+            // panel adds trails at the far end.
             .when_some(tabs, |this, tiles| {
                 this.child(
                     h_flex()
@@ -714,10 +714,11 @@ impl Tty7App {
                         .h_full()
                         .items_center()
                         .gap(px(2.))
-                        .when(has_trailing, |this| this.ml(px(6.)))
                         .children(tiles),
                 )
             })
+            .child(div().flex_1().min_w_0())
+            .when_some(trailing, |this, t| this.child(t))
             .into_any_element()
     }
 
