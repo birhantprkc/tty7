@@ -579,6 +579,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   characters over the rows below and now stay on one line (#928, reported by
   @XuJinNet in #919).
 
+- **A docked document takes the window's right edge on macOS.** With the
+  detail panel closed, the panel toggle and the app menu tile stayed at the end
+  of the terminal column's strip, stranded in the middle of the window beside
+  the document's own header. They now give way to the docked column, and the
+  tab strip gets their width back; ⌘J and the palette still reach both.
+
 - **The file tree sits on the right panel's rail** (#859), so its root lines up
   with the search field above it and a selected row is as wide as it is under
   Info and Source Control.
