@@ -7,7 +7,8 @@ description: "Every key tty7 reads, its type, and its default."
 |---|---|
 | macOS / Linux | `~/.config/tty7/config.json` |
 | Windows | `%APPDATA%\tty7\config.json` |
-| Override the whole directory | `TTY7_CONFIG_DIR` |
+| Windows, portable mode | `<folder of tty7-app.exe>\data\config.json` |
+| Override the whole directory | `TTY7_CONFIG_DIR`, or `--config-dir` |
 
 Every key is optional — a missing one means its default, so you only write what
 you change. Out-of-range numbers are clamped rather than rejected, and an
@@ -25,6 +26,26 @@ failing the file.
   "scrollback_limit": 50000
 }
 ```
+
+## Where the directory comes from
+
+The config directory holds everything an instance keeps, not just
+`config.json`: themes, sessions, scrollback, history, and the background
+server's socket. The first of these wins:
+
+1. `--config-dir <dir>` on the command line — `tty7-app.exe --config-dir D:\tty7-data`,
+   or `tty7-app --config-dir ~/tty7-alt` elsewhere. The app hands it on to the
+   server it starts, so the whole instance moves.
+2. The `TTY7_CONFIG_DIR` environment variable. Unlike a flag it also reaches
+   launches you do not control — Explorer's **Open in tty7**, a desktop file,
+   the `tty7` command in another terminal.
+3. **Windows portable mode**: a `data` folder next to `tty7-app.exe` in an
+   unzipped portable ZIP (the one carrying a `.tty7-portable` file). See
+   [Installation](/getting-started/installation).
+4. The platform default in the table above.
+
+Two directories are two independent instances, each with its own server and
+sessions.
 
 ## Typography
 
