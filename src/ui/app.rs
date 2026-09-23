@@ -4660,17 +4660,14 @@ impl Tty7App {
         mru_order(&stamps, self.active)
     }
 
+    /// The neighbouring tab in the order the strip shows them, wrapping at
+    /// the ends — no switcher, no MRU (#867). "Shows" matters with the
+    /// sidebar grouping tabs: the next row is not always the next index.
     fn cycle_tab(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let n = self.tabs.len();
-        if n < 2 {
-            return;
+        let order = self.visual_tab_order(cx);
+        if let Some(next) = step_in_order(&order, self.active, forward) {
+            self.activate(next, window, cx);
         }
-        let next = if forward {
-            (self.active + 1) % n
-        } else {
-            (self.active + n - 1) % n
-        };
-        self.activate(next, window, cx);
     }
 
     pub(crate) fn activate(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
@@ -5545,8 +5542,8 @@ impl Tty7App {
             ResizePaneDown => self.resize_pane(Dir::Down, window, cx),
             SwapPaneNext => self.swap_pane(true, window, cx),
             SwapPanePrev => self.swap_pane(false, window, cx),
-            NextTab => self.cycle_tab(true, window, cx),
-            PrevTab => self.cycle_tab(false, window, cx),
+            SelectNextTab => self.cycle_tab(true, window, cx),
+            SelectPrevTab => self.cycle_tab(false, window, cx),
             ToggleMaximizePane => self.toggle_maximize(window, cx),
             ToggleFullscreen => self.toggle_fullscreen(window, cx),
             ToggleTabSidebar => self.toggle_tab_sidebar(cx),
@@ -8556,6 +8553,12 @@ impl Render for Tty7App {
                 .on_action(
                     cx.listener(|this, _: &PrevTab, window, cx| this.tab_switch(false, window, cx)),
                 )
+                .on_action(cx.listener(|this, _: &SelectNextTab, window, cx| {
+                    this.cycle_tab(true, window, cx)
+                }))
+                .on_action(cx.listener(|this, _: &SelectPrevTab, window, cx| {
+                    this.cycle_tab(false, window, cx)
+                }))
                 .on_action(cx.listener(|this, _: &ActivateTab1, window, cx| {
                     this.activate_visual(0, window, cx)
                 }))
@@ -8806,6 +8809,24 @@ impl Render for Tty7App {
 /// A zero stamp means the tab was never activated, and those keep strip order
 /// at the back. `active` leads regardless — its own stamp only lands on the
 /// next frame.
+/// The tab after (or before) `active` in `order`, wrapping round. `None`
+/// when there is nowhere else to go; a tab missing from `order` starts from
+/// its end, so the step still lands on a tab the user can see.
+fn step_in_order(order: &[usize], active: usize, forward: bool) -> Option<usize> {
+    let n = order.len();
+    if n < 2 {
+        return None;
+    }
+    let pos = order.iter().position(|&i| i == active);
+    let next = match (pos, forward) {
+        (Some(p), true) => (p + 1) % n,
+        (Some(p), false) => (p + n - 1) % n,
+        (None, true) => 0,
+        (None, false) => n - 1,
+    };
+    Some(order[next]).filter(|&i| i != active)
+}
+
 fn mru_order(stamps: &[u64], active: usize) -> Vec<usize> {
     let mut order: Vec<usize> = (0..stamps.len()).collect();
     order.sort_by_key(|&i| (stamps[i] == 0, std::cmp::Reverse(stamps[i]), i));
@@ -9880,7 +9901,7 @@ mod tests {
         TabAgentSession, clear_window_override_values, close_prompt, document_column_px,
         join_shell_args, leaf_shares_the_window_daemon, mru_order, pane_free_for,
         parse_ssh_connect_input, parse_ssh_option_words, rename_outcome, side_panel_max,
-        split_shell_args, strip_band, wd_path_saveable,
+        split_shell_args, step_in_order, strip_band, wd_path_saveable,
     };
     use gpui::{Edges, point, px, size};
 
@@ -10220,6 +10241,42 @@ mod tests {
     #[test]
     fn mru_of_a_windowless_workspace_is_empty() {
         assert!(mru_order(&[], 0).is_empty());
+    }
+
+    #[test]
+    fn stepping_through_tabs_follows_the_strip_and_wraps() {
+        let order = [0, 1, 2];
+        assert_eq!(step_in_order(&order, 0, true), Some(1));
+        assert_eq!(step_in_order(&order, 2, true), Some(0));
+        assert_eq!(step_in_order(&order, 0, false), Some(2));
+        assert_eq!(step_in_order(&order, 1, false), Some(0));
+        // Pressing it again keeps going — this is not the MRU switcher, which
+        // bounces between the last two tabs (#867).
+        let mut at = 0;
+        let seen: Vec<usize> = (0..4)
+            .map(|_| {
+                at = step_in_order(&order, at, true).unwrap();
+                at
+            })
+            .collect();
+        assert_eq!(seen, vec![1, 2, 0, 1]);
+    }
+
+    #[test]
+    fn stepping_follows_the_grouped_sidebar_order_not_the_index() {
+        // Sidebar groups reorder the rows: index 2 is shown second.
+        let order = [0, 2, 1, 3];
+        assert_eq!(step_in_order(&order, 0, true), Some(2));
+        assert_eq!(step_in_order(&order, 2, true), Some(1));
+        assert_eq!(step_in_order(&order, 3, true), Some(0));
+        assert_eq!(step_in_order(&order, 0, false), Some(3));
+    }
+
+    #[test]
+    fn stepping_has_nowhere_to_go_with_one_tab() {
+        assert_eq!(step_in_order(&[], 0, true), None);
+        assert_eq!(step_in_order(&[0], 0, true), None);
+        assert_eq!(step_in_order(&[0], 0, false), None);
     }
 
     #[test]

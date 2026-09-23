@@ -1902,7 +1902,7 @@ impl Tty7App {
             .collect()
     }
 
-    fn visual_tab_order(&self, cx: &gpui::App) -> Vec<usize> {
+    pub(crate) fn visual_tab_order(&self, cx: &gpui::App) -> Vec<usize> {
         if cx.global::<Config>().tab_bar_position != crate::core::config::TabBarPosition::Left {
             return (0..self.tabs.len()).collect();
         }

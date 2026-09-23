@@ -1391,6 +1391,8 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::CmdSwapPanePrevious => "与上一窗格交换",
         L10nKey::CmdNextTab => "下一标签页",
         L10nKey::CmdPreviousTab => "上一标签页",
+        L10nKey::CmdRecentTabSwitcher => "最近标签页切换器",
+        L10nKey::CmdRecentTabSwitcherReverse => "最近标签页切换器（反向）",
         L10nKey::CmdCopyWorkingDirectory => "复制工作目录",
         L10nKey::CmdCopySessionId => "复制会话 ID",
         L10nKey::CmdCopySessionIdSubtitle => "编码 agent 自身的会话 ID",
