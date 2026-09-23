@@ -3143,6 +3143,88 @@ mod config_tests {
     }
 }
 
+/// Issue #857 asked whether a read boundary can leave the grid different from
+/// the one the same bytes parse into in one go — a Pi response streamed as
+/// synchronized differential frames (cursor-up, erase-line, rewrite) with
+/// OSC 133 marks and CJK text. The reader hands the emulator whatever the
+/// socket delivers, so the grid has to come out the same for every split.
+#[cfg(test)]
+mod chunking_tests {
+    use super::*;
+    use alacritty_terminal::event::VoidListener;
+    use alacritty_terminal::grid::Dimensions as _;
+    use alacritty_terminal::index::{Column, Line};
+
+    const COLS: usize = 24;
+    const ROWS: usize = 8;
+
+    fn parse(chunks: &[&[u8]]) -> Vec<String> {
+        let config = terminal_config_from_user(&crate::core::config::Config::default());
+        let mut term = Term::new(config, &TermSize::new(COLS, ROWS), VoidListener);
+        let mut processor: ansi::Processor = ansi::Processor::new();
+        for chunk in chunks {
+            processor.advance(&mut term, chunk);
+        }
+        assert!(
+            processor.sync_timeout().sync_timeout().is_none(),
+            "every frame closes its synchronized update"
+        );
+        let grid = term.grid();
+        let mut rows: Vec<String> = (0..grid.screen_lines() as i32)
+            .map(|line| {
+                (0..COLS)
+                    .map(|col| {
+                        let cell = &grid[Line(line)][Column(col)];
+                        let mut s = format!("{}{:?}", cell.c, cell.flags);
+                        for z in cell.zerowidth().unwrap_or(&[]) {
+                            s.push(*z);
+                        }
+                        s
+                    })
+                    .collect()
+            })
+            .collect();
+        rows.push(format!("{:?}", grid.cursor.point));
+        rows
+    }
+
+    /// Three frames of a response streaming in, each redrawing the lines it
+    /// touched the way Pi's main-screen renderer does.
+    fn stream() -> Vec<u8> {
+        let mark = "\x1b]133;B\x07\x1b]133;C\x07";
+        let frames = [
+            format!("\x1b[?2026h\r\x1b[2K例{mark}Ex\x1b[?2026l"),
+            format!(
+                "\x1b[?2026h\r\x1b[2K例子：Example sentence.\r\n\r\n\x1b[2K## 资源{mark}N\x1b[?2026l"
+            ),
+            format!(
+                "\x1b[?2026h\x1b[2A\r\x1b[2K例子：Example.❤️\r\n\r\n\x1b[2K## 资源\r\n\
+                 \x1b[2K{mark}下一步：Next step.\x1b[?2026l"
+            ),
+        ];
+        frames.concat().into_bytes()
+    }
+
+    #[test]
+    fn a_streamed_response_parses_the_same_at_every_split() {
+        let bytes = stream();
+        let whole = parse(&[&bytes]);
+        assert!(
+            whole.iter().all(|row| !row.contains("33;")),
+            "no mark reaches the grid as text"
+        );
+        for cut in 0..=bytes.len() {
+            assert_eq!(
+                parse(&[&bytes[..cut], &bytes[cut..]]),
+                whole,
+                "split at byte {cut}"
+            );
+        }
+        let bytewise: Vec<&[u8]> = bytes.chunks(1).collect();
+        assert_eq!(parse(&bytewise), whole, "a byte at a time");
+    }
+}
+
 fn alacritty_cursor_style(style: ConfigCursorStyle) -> CursorStyle {
     let shape = match style {
         ConfigCursorStyle::Block => CursorShape::Block,
