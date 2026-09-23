@@ -1198,6 +1198,8 @@ l10n_keys! {
     CmdSwapPanePrevious,
     CmdNextTab,
     CmdPreviousTab,
+    CmdRecentTabSwitcher,
+    CmdRecentTabSwitcherReverse,
     CmdCopyWorkingDirectory,
     CmdCopySessionId,
     CmdCopySessionIdSubtitle,
