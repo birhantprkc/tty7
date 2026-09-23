@@ -597,6 +597,17 @@ pub(crate) fn apply_theme(mut window: Option<&mut Window>, cx: &mut App) {
         if take_appearance_change(window, appearance, cx) {
             window.set_background_appearance(appearance);
         }
+        // Opacity, blur and backdrop are app-wide settings, but they are
+        // changed from whichever window the settings page is in — its own,
+        // now. Hand the same appearance to every other window too. The one
+        // being updated refuses a nested update, and was handled above.
+        for other in cx.windows() {
+            let _ = other.update(cx, |_, window, cx| {
+                if take_appearance_change(window, appearance, cx) {
+                    window.set_background_appearance(appearance);
+                }
+            });
+        }
     }
 
     Theme::change(mode, window.as_deref_mut(), cx);
