@@ -1035,6 +1035,11 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::FileTreeDeleteFailed => "Could not delete {name}",
         L10nKey::FileTreeCreateFailed => "Could not create {name}",
         L10nKey::FileTreeRenameFailed => "Could not rename {name}",
+        L10nKey::FileTreeDownloadFailed => "Could not download {name}",
+        L10nKey::FileTreeDownloaded => "Downloaded to {path}",
+        L10nKey::FileTreeDownloadTooLarge => {
+            "Larger than {limit} MB — fetch it with scp or rsync instead."
+        }
         L10nKey::FileTreeContextOpen => "Open",
         L10nKey::FileTreeContextCdHere => "cd Here",
         L10nKey::FileTreeContextInsertPath => "Insert Path in Terminal",

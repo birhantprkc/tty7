@@ -331,7 +331,7 @@ fn local_home() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
-fn local_download_dir() -> PathBuf {
+pub(crate) fn local_download_dir() -> PathBuf {
     local_home().join("Downloads")
 }
 
@@ -342,7 +342,11 @@ fn local_download_dir() -> PathBuf {
 /// yet, so the filesystem alone would hand the same name out twice. `None`
 /// means every name in range is spoken for — better to say so than to return
 /// one of them and quietly overwrite it.
-fn free_local_path(dir: &Path, name: &str, claimed: &HashSet<PathBuf>) -> Option<PathBuf> {
+pub(crate) fn free_local_path(
+    dir: &Path,
+    name: &str,
+    claimed: &HashSet<PathBuf>,
+) -> Option<PathBuf> {
     let taken = |p: &PathBuf| p.exists() || claimed.contains(p);
     let first = dir.join(name);
     if !taken(&first) {

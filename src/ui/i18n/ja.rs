@@ -1101,6 +1101,11 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::FileTreeDeleteFailed => "{name} を削除できませんでした",
         L10nKey::FileTreeCreateFailed => "{name} を作成できませんでした",
         L10nKey::FileTreeRenameFailed => "{name} の名前を変更できませんでした",
+        L10nKey::FileTreeDownloadFailed => "{name} をダウンロードできませんでした",
+        L10nKey::FileTreeDownloaded => "{path} にダウンロードしました",
+        L10nKey::FileTreeDownloadTooLarge => {
+            "{limit} MB を超えています。scp または rsync でダウンロードしてください"
+        }
         L10nKey::FileTreeContextOpen => "開く",
         L10nKey::FileTreeContextCdHere => "ここで cd",
         L10nKey::FileTreeContextInsertPath => "ターミナルにパスを挿入",
