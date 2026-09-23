@@ -135,6 +135,10 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsFontLigaturesDesc => {
             "ターミナルテキストで一般的なプログラミング用リガチャー（合字）を有効にする"
         }
+        L10nKey::SettingsFontThicken => "ストロークを太くする",
+        L10nKey::SettingsFontThickenDesc => {
+            "macOS のフォントスムージング：文字をやや太く描画し、明るい文字ほど太くなる。tty7 の再起動後に反映"
+        }
         L10nKey::SettingsCursor => "カーソル",
         L10nKey::SettingsCursorShape => "カーソルの形状",
         L10nKey::SettingsCursorShapeDesc => "ターミナルカーソルの描画方法",
@@ -873,6 +877,9 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         }
         L10nKey::SettingsSearchFontLigaturesKeywords => {
             "タイポグラフィ グリフ fira font ligatures typography glyph fira"
+        }
+        L10nKey::SettingsSearchFontThickenKeywords => {
+            "フォントスムージング 太字 細字 ウェイト font smoothing thicken bold weight thin AppleFontSmoothing"
         }
         L10nKey::SettingsSearchFontSizeKeywords => {
             "タイポグラフィ 文字 拡大 縮小 ズーム font size typography text bigger smaller zoom"

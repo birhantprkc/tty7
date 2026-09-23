@@ -3497,6 +3497,12 @@ impl Tty7App {
         self.update_config(cx, |cfg| cfg.show_tray_icon = on);
     }
 
+    /// Saved only: gpui reads the preference this drives once per process, so
+    /// it takes hold at the next launch (see `apply_font_thicken` in main.rs).
+    pub(crate) fn set_font_thicken(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.update_config(cx, |cfg| cfg.font_thicken = on);
+    }
+
     pub(crate) fn set_macos_option_as_alt(&mut self, on: bool, cx: &mut Context<Self>) {
         self.update_config(cx, |cfg| cfg.macos_option_as_alt = on);
     }

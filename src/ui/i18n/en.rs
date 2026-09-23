@@ -133,6 +133,10 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::SettingsFontLigaturesDesc => {
             "Enable common programming ligature features for terminal text."
         }
+        L10nKey::SettingsFontThicken => "Thicken strokes",
+        L10nKey::SettingsFontThickenDesc => {
+            "macOS font smoothing: draws text a little bolder, light text most. Takes effect after restarting tty7."
+        }
         L10nKey::SettingsCursor => "Cursor",
         L10nKey::SettingsCursorShape => "Cursor shape",
         L10nKey::SettingsCursorShapeDesc => "How the terminal cursor is drawn.",
@@ -840,6 +844,9 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::SettingsSearchFocusFollowsMouseKeywords => "pane hover activate",
         L10nKey::SettingsSearchFontFamilyKeywords => "typeface monospace typography",
         L10nKey::SettingsSearchFontLigaturesKeywords => "typography glyph fira",
+        L10nKey::SettingsSearchFontThickenKeywords => {
+            "font smoothing thicken bold weight thin dilation antialiasing AppleFontSmoothing"
+        }
         L10nKey::SettingsSearchFontSizeKeywords => "typography text bigger smaller zoom",
         L10nKey::SettingsSearchForwardSshLoopbackLinksKeywords => {
             "ssh remote port tunnel localhost forward links ports autoforward detect"

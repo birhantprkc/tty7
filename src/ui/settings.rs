@@ -549,6 +549,12 @@ fn settings_search_entries() -> &'static [SearchEntry] {
             title: SettingsFontLigatures,
             keywords: SettingsSearchFontLigaturesKeywords,
         },
+        #[cfg(target_os = "macos")]
+        SearchEntry {
+            section: Appearance,
+            title: SettingsFontThicken,
+            keywords: SettingsSearchFontThickenKeywords,
+        },
         SearchEntry {
             section: Appearance,
             title: SettingsCursorShape,
@@ -910,6 +916,7 @@ impl SearchEntry {
             L10nKey::SettingsItalicFont => "font_family_italic",
             L10nKey::SettingsUiFontFamily => "ui_font_family",
             L10nKey::SettingsFontLigatures => "font_features",
+            L10nKey::SettingsFontThicken => "font_thicken",
             L10nKey::SettingsOpacity => "window_opacity",
             L10nKey::SettingsBlur => "window_blur",
             L10nKey::SettingsBackdrop => "window_backdrop",
@@ -946,6 +953,7 @@ impl SearchEntry {
             L10nKey::SettingsBoldFont => t(L10nKey::SettingsBoldFontDesc),
             L10nKey::SettingsItalicFont => t(L10nKey::SettingsItalicFontDesc),
             L10nKey::SettingsFontLigatures => t(L10nKey::SettingsFontLigaturesDesc),
+            L10nKey::SettingsFontThicken => t(L10nKey::SettingsFontThickenDesc),
             L10nKey::SettingsCursorShape => t(L10nKey::SettingsCursorShapeDesc),
             L10nKey::SettingsCursorBlink => t(L10nKey::SettingsCursorBlinkDesc),
             L10nKey::SettingsBackgroundImage => t(L10nKey::SettingsBackgroundImageDesc),
@@ -1113,6 +1121,7 @@ impl SearchEntry {
                 cfg.working_directory.path != defaults.working_directory.path
             }
             L10nKey::SettingsFontLigatures => cfg.font_features != defaults.font_features,
+            L10nKey::SettingsFontThicken => cfg.font_thicken != defaults.font_thicken,
             _ => false,
         }
     }
@@ -3478,6 +3487,7 @@ impl Tty7App {
         let cfg = cx.global::<Config>();
         let cursor_style = cfg.cursor_style;
         let cursor_blink = cfg.cursor_blink;
+        let font_thicken = cfg.font_thicken;
         let font_ligatures = cfg.font_features.as_ref().is_some_and(|features| {
             features.is_calt_enabled() == Some(true)
                 || features
@@ -3581,6 +3591,19 @@ impl Tty7App {
             .checked(font_ligatures)
             .on_click(cx.listener(|this, on: &bool, _w, cx| this.set_font_ligatures(*on, cx)))
             .into_any_element();
+        // macOS alone dilates glyph strokes, so elsewhere there is no row.
+        let thicken_row = cfg!(target_os = "macos").then(|| {
+            let thicken_switch = crate::ui::theme::switch("font-thicken", cx)
+                .checked(font_thicken)
+                .on_click(cx.listener(|this, on: &bool, _w, cx| this.set_font_thicken(*on, cx)))
+                .into_any_element();
+            self.settings_row(
+                t(L10nKey::SettingsFontThicken),
+                t(L10nKey::SettingsFontThickenDesc),
+                thicken_switch,
+                cx,
+            )
+        });
 
         let cursor_idx = match cursor_style {
             CursorStyle::Block => 0,
@@ -3672,6 +3695,7 @@ impl Tty7App {
                 ligature_switch,
                 cx,
             ))
+            .when_some(thicken_row, |v, row| v.child(row))
             .child(self.section_rule(cx))
             .child(self.section_header(t(L10nKey::SettingsCursor), cx))
             .child(self.settings_row(
