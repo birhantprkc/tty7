@@ -449,7 +449,7 @@ fn settings_search_entries() -> &'static [SearchEntry] {
             keywords: SettingsSearchAboutKeywords,
         },
         SearchEntry {
-            section: About,
+            section: General,
             title: SettingsServer,
             keywords: SettingsSearchAboutKeywords,
         },
@@ -806,22 +806,22 @@ fn settings_search_entries() -> &'static [SearchEntry] {
             keywords: SettingsSearchAboutKeywords,
         },
         SearchEntry {
-            section: About,
+            section: General,
             title: SettingsAppHttpProxy,
             keywords: SettingsSearchAppHttpProxyKeywords,
         },
         SearchEntry {
-            section: About,
+            section: General,
             title: SettingsUpdateChannel,
             keywords: SettingsSearchUpdateChannelKeywords,
         },
         SearchEntry {
-            section: About,
+            section: General,
             title: SettingsCheckUpdatesOnLaunch,
             keywords: SettingsSearchCheckUpdatesOnLaunchKeywords,
         },
         SearchEntry {
-            section: About,
+            section: General,
             title: SettingsAutoDownload,
             keywords: SettingsSearchAutoDownloadKeywords,
         },
@@ -3231,6 +3231,8 @@ impl Tty7App {
                 )
             })
 
+            .child(self.section_rule(cx))
+            .child(self.render_settings_maintenance(cx))
             .into_any_element()
     }
 
@@ -7948,49 +7950,9 @@ impl Tty7App {
             .into_any_element()
     }
 
-    fn render_settings_about(&self, cx: &mut Context<Self>) -> AnyElement {
-        // Copied out rather than held: `self.segmented` below needs `cx`
-        // mutably, and a live `cx.theme()` borrow would keep it locked.
-        let (foreground, muted_fg, danger) = {
-            let theme = cx.theme();
-            (theme.foreground, theme.muted_foreground, theme.danger)
-        };
-
-        let update_status = cx
-            .try_global::<crate::core::update::UpdateStatus>()
-            .cloned()
-            .unwrap_or_default();
-        let update = update_status.available.clone();
-        let update_busy = matches!(
-            update_status.phase,
-            crate::core::update::UpdatePhase::Checking
-                | crate::core::update::UpdatePhase::Downloading { .. }
-                | crate::core::update::UpdatePhase::Verifying
-                | crate::core::update::UpdatePhase::Installing
-        );
-        let transferring = matches!(
-            update_status.phase,
-            crate::core::update::UpdatePhase::Downloading { .. }
-                | crate::core::update::UpdatePhase::Verifying
-        );
-        // A staged package whose directory has since been swept away is not an
-        // offer worth making.
-        let ready = update_status
-            .ready
-            .clone()
-            .filter(crate::core::update::PendingUpdate::is_usable);
-        // "You're running the latest version" directly above "27.0.0 is ready
-        // to install" is a contradiction, and a reachable one: a release that
-        // gets pulled after someone downloaded it leaves exactly this pair.
-        // The staged package is the more useful of the two claims.
-        let phase_text = localized_update_phase(&update_status.phase).filter(|_| {
-            ready.is_none()
-                || !matches!(
-                    update_status.phase,
-                    crate::core::update::UpdatePhase::UpToDate
-                )
-        });
-        let failure = update_status.failure.clone();
+    fn render_settings_maintenance(&self, cx: &mut Context<Self>) -> AnyElement {
+        let foreground = cx.theme().foreground;
+        let muted_fg = cx.theme().muted_foreground;
         let stale_daemon = crate::daemon::spawn::local_daemon_stale_build();
         // Whether picking up the new build costs the user their running panes
         // decides what this offer is, so it decides what it says.
@@ -8042,13 +8004,138 @@ impl Tty7App {
             .when_some(http_proxy_error, |this, line| this.child(line))
             .into_any_element();
 
+        v_flex()
+            .child(self.section_header(t(L10nKey::SettingsUpdates), cx))
+            .child(self.settings_row(
+                t(L10nKey::SettingsUpdateChannel),
+                t(L10nKey::SettingsUpdateChannelDesc),
+                channel_picker,
+                cx,
+            ))
+            .child(
+                self.settings_row(
+                    t(L10nKey::SettingsCheckUpdatesOnLaunch),
+                    t(L10nKey::SettingsCheckUpdatesDesc),
+                    crate::ui::theme::switch("check-updates", cx)
+                        .checked(check_for_updates)
+                        .on_click(cx.listener(|this, on: &bool, _w, cx| {
+                            this.set_check_for_updates(*on, cx)
+                        }))
+                        .into_any_element(),
+                    cx,
+                ),
+            )
+            .child(
+                self.settings_row(
+                    t(L10nKey::SettingsAutoDownload),
+                    t(L10nKey::SettingsAutoDownloadDesc),
+                    crate::ui::theme::switch("auto-download-updates", cx)
+                        .checked(auto_download)
+                        .on_click(cx.listener(|this, on: &bool, _w, cx| {
+                            this.set_auto_download_updates(*on, cx)
+                        }))
+                        .into_any_element(),
+                    cx,
+                ),
+            )
+            .child(self.settings_row(
+                t(L10nKey::SettingsAppHttpProxy),
+                t(L10nKey::SettingsAppHttpProxyDesc),
+                http_proxy_control,
+                cx,
+            ))
+            .child(self.section_rule(cx))
+            .child(self.section_header(t(L10nKey::SettingsServer), cx))
+            .child(
+                v_flex()
+                    .gap_2()
+                    // The other half of an in-place update: the app is new, the
+                    // process serving every pane is not. Said here rather than
+                    // beside the update controls, so the one button that offers
+                    // to pick the new build up stays the only one on the page.
+                    .when_some(stale_daemon.as_deref(), |this, build| {
+                        this.child(
+                            div()
+                                .text_sm()
+                                .text_color(foreground)
+                                .child(t_fmt(L10nKey::SettingsDaemonStale, &[("build", build)])),
+                        )
+                    })
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(muted_fg)
+                            // A stale server has a more specific thing to say
+                            // than the section's standing description, and it
+                            // ends with the same button.
+                            .child(t(if stale_daemon.is_some() {
+                                stale_daemon_note
+                            } else {
+                                L10nKey::SettingsServerDesc
+                            })),
+                    )
+                    .child(
+                        h_flex().child(
+                            Button::new("restart-daemon")
+                                .label(t(L10nKey::SettingsRestartServer))
+                                .small()
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.restart_daemon(window, cx)
+                                })),
+                        ),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    fn render_settings_about(&self, cx: &mut Context<Self>) -> AnyElement {
+        // Copy colors before constructing controls that borrow `cx` mutably.
+        let (foreground, muted_fg, danger) = {
+            let theme = cx.theme();
+            (theme.foreground, theme.muted_foreground, theme.danger)
+        };
+
+        let update_status = cx
+            .try_global::<crate::core::update::UpdateStatus>()
+            .cloned()
+            .unwrap_or_default();
+        let update = update_status.available.clone();
+        let update_busy = matches!(
+            update_status.phase,
+            crate::core::update::UpdatePhase::Checking
+                | crate::core::update::UpdatePhase::Downloading { .. }
+                | crate::core::update::UpdatePhase::Verifying
+                | crate::core::update::UpdatePhase::Installing
+        );
+        let transferring = matches!(
+            update_status.phase,
+            crate::core::update::UpdatePhase::Downloading { .. }
+                | crate::core::update::UpdatePhase::Verifying
+        );
+        // A staged package whose directory has since been swept away is not an
+        // offer worth making.
+        let ready = update_status
+            .ready
+            .clone()
+            .filter(crate::core::update::PendingUpdate::is_usable);
+        // "You're running the latest version" directly above "27.0.0 is ready
+        // to install" is a contradiction, and a reachable one: a release that
+        // gets pulled after someone downloaded it leaves exactly this pair.
+        // The staged package is the more useful of the two claims.
+        let phase_text = localized_update_phase(&update_status.phase).filter(|_| {
+            ready.is_none()
+                || !matches!(
+                    update_status.phase,
+                    crate::core::update::UpdatePhase::UpToDate
+                )
+        });
+        let failure = update_status.failure.clone();
         let logo = Arc::new(Image::from_bytes(
             ImageFormat::Png,
             include_bytes!("../../assets/logo@256.png").to_vec(),
         ));
 
         v_flex()
-            .child(self.section_header(t(L10nKey::SettingsNavAbout), cx))
             .child(
                 h_flex()
                     .gap_4()
@@ -8273,85 +8360,6 @@ impl Tty7App {
                                         })),
                                 )
                             }),
-                    )
-                    .child(self.settings_row(
-                        t(L10nKey::SettingsUpdateChannel),
-                        t(L10nKey::SettingsUpdateChannelDesc),
-                        channel_picker,
-                        cx,
-                    ))
-                    .child(
-                        self.settings_row(
-                            t(L10nKey::SettingsCheckUpdatesOnLaunch),
-                            t(L10nKey::SettingsCheckUpdatesDesc),
-                            crate::ui::theme::switch("check-updates", cx)
-                                .checked(check_for_updates)
-                                .on_click(cx.listener(|this, on: &bool, _w, cx| {
-                                    this.set_check_for_updates(*on, cx)
-                                }))
-                                .into_any_element(),
-                            cx,
-                        ),
-                    )
-                    .child(
-                        self.settings_row(
-                            t(L10nKey::SettingsAutoDownload),
-                            t(L10nKey::SettingsAutoDownloadDesc),
-                            crate::ui::theme::switch("auto-download-updates", cx)
-                                .checked(auto_download)
-                                .on_click(cx.listener(|this, on: &bool, _w, cx| {
-                                    this.set_auto_download_updates(*on, cx)
-                                }))
-                                .into_any_element(),
-                            cx,
-                        ),
-                    ),
-            )
-            .child(self.settings_row(
-                t(L10nKey::SettingsAppHttpProxy),
-                t(L10nKey::SettingsAppHttpProxyDesc),
-                http_proxy_control,
-                cx,
-            ))
-            .child(self.section_rule(cx))
-            .child(self.section_header(t(L10nKey::SettingsServer), cx))
-            .child(
-                v_flex()
-                    .gap_2()
-                    // The other half of an in-place update: the app is new, the
-                    // process serving every pane is not. Said here rather than
-                    // beside the update controls, so the one button that offers
-                    // to pick the new build up stays the only one on the page.
-                    .when_some(stale_daemon.as_deref(), |this, build| {
-                        this.child(
-                            div()
-                                .text_sm()
-                                .text_color(foreground)
-                                .child(t_fmt(L10nKey::SettingsDaemonStale, &[("build", build)])),
-                        )
-                    })
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(muted_fg)
-                            // A stale server has a more specific thing to say
-                            // than the section's standing description, and it
-                            // ends with the same button.
-                            .child(t(if stale_daemon.is_some() {
-                                stale_daemon_note
-                            } else {
-                                L10nKey::SettingsServerDesc
-                            })),
-                    )
-                    .child(
-                        h_flex().child(
-                            Button::new("restart-daemon")
-                                .label(t(L10nKey::SettingsRestartServer))
-                                .small()
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.restart_daemon(window, cx)
-                                })),
-                        ),
                     ),
             )
             .into_any_element()
@@ -8936,13 +8944,13 @@ mod tests {
             ("symlink", Agents),
             // Rows the index had no entry for at all, so the query counted
             // nothing, no badge appeared and no row lit up: the whole Updates
-            // group on About, and Smooth scrolling between two rows that were
+            // group on General, and Smooth scrolling between two rows that were
             // both findable.
             ("smooth", Terminal),
-            ("nightly", About),
-            ("channel", About),
-            ("metered", About),
-            ("automatic", About),
+            ("nightly", General),
+            ("channel", General),
+            ("metered", General),
+            ("automatic", General),
             // A headline feature the index had never heard of: "background
             // image" matched nothing, and typing it walked the page to About
             // because "background" alone hits Download updates in the
