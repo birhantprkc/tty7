@@ -12,6 +12,7 @@ use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::{Config, Term, TermMode};
 use alacritty_terminal::vte::ansi::{self, CursorShape, CursorStyle};
 
+use crate::terminal::command_cursor::{CommandCursorStyle, CommandMark};
 use crate::terminal::parked_cursor::{CursorCut, ParkedCursorRepair, ParkedCursorScanner};
 
 use std::collections::VecDeque;
@@ -1181,6 +1182,11 @@ impl RemoteTerminal {
                 let mut replaying_state = true;
                 let mut cursor_scan = ParkedCursorScanner::new();
                 let mut parked_cursor = ParkedCursorRepair::default();
+                // #837: the command marks, cut at exactly where they land so
+                // the cursor style a finished command left behind is judged
+                // against the bytes before its `D`, not the whole batch.
+                let mut command_tok = OscTokenizer::new(&[b"133"]);
+                let mut command_cursor = CommandCursorStyle::default();
                 let mut pending: Vec<u8> = buffered;
                 // Kitty-graphics decode runs on its own thread with newest-frame
                 // coalescing (issue #213): inflating a full-window browser frame
@@ -1255,10 +1261,13 @@ impl RemoteTerminal {
                                 // the batch splits at each of them: advance the
                                 // emulator to the cut, act on the state that
                                 // sequence left behind, carry on.
-                                let mut cuts: Vec<(usize, CursorCut)> = Vec::new();
+                                let mut cuts: Vec<(usize, ReaderCut)> = Vec::new();
                                 if local_conpty.load(Ordering::Relaxed) {
-                                    cursor_scan.feed(&out_batch, |off, c| cuts.push((off, c)));
+                                    cursor_scan.feed(&out_batch, |off, c| {
+                                        cuts.push((off, ReaderCut::Parked(c)))
+                                    });
                                 }
+                                command_cuts(&mut command_tok, &out_batch, &mut cuts);
                                 {
                                     let t0 = trace.then(std::time::Instant::now);
                                     let mut term = term.lock();
@@ -1273,7 +1282,14 @@ impl RemoteTerminal {
                                         for (off, cut) in cuts {
                                             processor.advance(&mut *term, &out_batch[at..off]);
                                             at = off;
-                                            parked_cursor.apply(&mut term, cut);
+                                            match cut {
+                                                ReaderCut::Parked(cut) => {
+                                                    parked_cursor.apply(&mut term, cut)
+                                                }
+                                                ReaderCut::Command(mark) => {
+                                                    command_cursor.apply(&mut term, mark)
+                                                }
+                                            }
                                         }
                                         processor.advance(&mut *term, &out_batch[at..]);
                                     }
@@ -1396,12 +1412,25 @@ impl RemoteTerminal {
                                 cursor_scan.reset();
                                 parked_cursor.reset();
                                 proxy.replaying.store(true, Ordering::Relaxed);
+                                // The replay carries the command marks too, so
+                                // a pane reattached after `nvim` exited in it
+                                // comes back with the prompt's cursor.
+                                let mut cuts: Vec<(usize, ReaderCut)> = Vec::new();
+                                command_cuts(&mut command_tok, &bytes, &mut cuts);
                                 {
                                     let mut term = term.lock();
                                     if quit.load(Ordering::SeqCst) {
                                         return;
                                     }
-                                    processor.advance(&mut *term, &bytes);
+                                    let mut at = 0usize;
+                                    for (off, cut) in cuts {
+                                        processor.advance(&mut *term, &bytes[at..off]);
+                                        at = off;
+                                        if let ReaderCut::Command(mark) = cut {
+                                            command_cursor.apply(&mut term, mark);
+                                        }
+                                    }
+                                    processor.advance(&mut *term, &bytes[at..]);
                                     if processor.sync_timeout().sync_timeout().is_some() {
                                         processor.stop_sync(&mut *term);
                                     }
@@ -3140,6 +3169,29 @@ mod config_tests {
         assert_eq!(config.conpty_resize, cfg!(windows));
         #[cfg(windows)]
         assert!(config.conpty_resize);
+    }
+}
+
+/// A point in a batch of pty output where the reader stops advancing the
+/// emulator to act on the state the bytes before it left behind.
+enum ReaderCut {
+    Parked(CursorCut),
+    Command(CommandMark),
+}
+
+/// Adds the batch's command marks to `cuts`, keeping them in stream order
+/// alongside whatever cuts are already there.
+fn command_cuts(tok: &mut OscTokenizer, bytes: &[u8], cuts: &mut Vec<(usize, ReaderCut)>) {
+    let before = cuts.len();
+    tok.feed_at(bytes, |off, payload| {
+        if let Some(mark) = CommandMark::parse(payload) {
+            cuts.push((off, ReaderCut::Command(mark)));
+        }
+    });
+    if before > 0 && cuts.len() > before {
+        // Stable, so a mark that ends where a cursor show does keeps its place
+        // after it.
+        cuts.sort_by_key(|(off, _)| *off);
     }
 }
 
@@ -4923,6 +4975,7 @@ mod tests {
     fn cursor_style_sequence_overrides_and_resets_to_user_default() {
         use alacritty_terminal::vte::ansi::CursorShape;
 
+        crate::core::config::pin_test_config_dir();
         let (client_side, mut daemon_side) = UnixStream::pair().unwrap();
         let term = RemoteTerminal::from_stream(client_side, TermSize::new(80, 24)).unwrap();
         let mut user_config = crate::core::config::Config::default();
@@ -4957,6 +5010,105 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
         assert_eq!(shape, CursorShape::Underline);
+    }
+
+    /// Feeds `output` to a pane configured with `configured`, one daemon frame
+    /// per chunk, and reports the cursor shape once all of it has been parsed.
+    fn cursor_shape_after(
+        configured: ConfigCursorStyle,
+        output: &[&[u8]],
+    ) -> alacritty_terminal::vte::ansi::CursorShape {
+        use alacritty_terminal::index::{Column, Line};
+
+        // The pane reads config.json when it is built; keep that off the
+        // user's real one.
+        crate::core::config::pin_test_config_dir();
+        let (client_side, mut daemon_side) = UnixStream::pair().unwrap();
+        let term = RemoteTerminal::from_stream(client_side, TermSize::new(80, 24)).unwrap();
+        let mut user_config = crate::core::config::Config::default();
+        user_config.cursor_style = configured;
+        term.apply_user_config(&user_config);
+
+        for chunk in output {
+            DaemonMsg::Output(chunk.to_vec())
+                .encode(&mut daemon_side)
+                .unwrap();
+        }
+        // A sentinel painted after everything else: once it is on the grid,
+        // every chunk before it has been parsed, so the shape read below is
+        // the final one and not a transient match.
+        DaemonMsg::Output(b"\x1b[24;1H#".to_vec())
+            .encode(&mut daemon_side)
+            .unwrap();
+        daemon_side.flush().unwrap();
+        for _ in 0..400 {
+            if term.term.lock().grid()[Line(23)][Column(0)].c == '#' {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let term = term.term.lock();
+        assert_eq!(
+            term.grid()[Line(23)][Column(0)].c,
+            '#',
+            "output never parsed"
+        );
+        term.cursor_style().shape
+    }
+
+    /// #837: both spellings of the DECSCUSR reset land on `cursor_style`.
+    #[test]
+    fn cursor_style_reset_returns_to_a_configured_bar_or_underline() {
+        use alacritty_terminal::vte::ansi::CursorShape;
+
+        for reset in [&b"\x1b[0 q"[..], &b"\x1b[ q"[..]] {
+            for (configured, want) in [
+                (ConfigCursorStyle::Bar, CursorShape::Beam),
+                (ConfigCursorStyle::Underline, CursorShape::Underline),
+            ] {
+                assert_eq!(
+                    cursor_shape_after(configured, &[b"\x1b[6 q", b"\x1b[2 q", reset]),
+                    want,
+                    "{configured:?} after {reset:?}"
+                );
+            }
+        }
+    }
+
+    /// #837: what nvim actually sends on exit under `xterm-256color` is `Se`,
+    /// `\e[2 q` — a literal steady block. The command's `D` hands the prompt
+    /// its configured cursor back, whether the block arrives in the same
+    /// frame as the marks or in one of its own.
+    #[test]
+    fn a_block_an_exiting_command_left_is_undone_at_its_finish_mark() {
+        use alacritty_terminal::vte::ansi::CursorShape;
+
+        for (configured, want) in [
+            (ConfigCursorStyle::Bar, CursorShape::Beam),
+            (ConfigCursorStyle::Underline, CursorShape::Underline),
+        ] {
+            assert_eq!(
+                cursor_shape_after(
+                    configured,
+                    &[b"\x1b]133;C;nvim x\x07\x1b[2 q\x1b]133;D;0\x07$ "],
+                ),
+                want,
+                "{configured:?}, one frame"
+            );
+            assert_eq!(
+                cursor_shape_after(
+                    configured,
+                    &[
+                        b"\x1b]133;C;nvim x\x07",
+                        b"\x1b[6 q",
+                        b"\x1b[2 q\x1b[?1049l",
+                        b"\x1b]133;D;0\x07\x1b]133;A\x07$ ",
+                    ],
+                ),
+                want,
+                "{configured:?}, split frames"
+            );
+        }
     }
 
     #[test]
