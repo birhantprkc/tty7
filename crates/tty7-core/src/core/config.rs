@@ -135,6 +135,16 @@ pub struct Config {
     pub font_family_bold: Option<String>,
     pub font_family_italic: Option<String>,
     pub font_features: Option<FontFeatures>,
+    /// macOS only: let CoreGraphics font smoothing thicken glyph strokes — by
+    /// more the lighter the text, which is why light-on-dark looks bolder.
+    /// On by default, because it is what every macOS app draws with.
+    ///
+    /// Off pins `AppleFontSmoothing` to `0` for this process alone, so glyphs
+    /// are drawn at the face's own weight. gpui reads that preference once, the
+    /// first time it rasterizes text, so a change applies at the next launch.
+    /// Ignored elsewhere, where there is no such dilation to turn off.
+    #[serde(default = "default_true")]
+    pub font_thicken: bool,
     pub font_size: f32,
     pub line_height: f32,
     /// The interface's root font size, in pixels — everything outside the
@@ -629,6 +639,7 @@ impl Default for Config {
             font_family_bold: None,
             font_family_italic: None,
             font_features: None,
+            font_thicken: true,
             font_size: 15.0,
             line_height: 1.4,
             ui_font_size: default_ui_font_size(),
@@ -1495,6 +1506,18 @@ mod tests {
 
         let default_cfg = Config::default();
         assert!(default_cfg.font_features.is_none());
+    }
+
+    #[test]
+    fn font_thicken_defaults_on_and_reads_an_explicit_off() {
+        // On is what tty7 drew before the key existed, so a config that never
+        // names it must keep rendering exactly as it did.
+        let cfg: Config = serde_json::from_str("{}").unwrap();
+        assert!(cfg.font_thicken);
+        assert!(Config::default().font_thicken);
+
+        let cfg: Config = serde_json::from_str(r#"{"font_thicken":false}"#).unwrap();
+        assert!(!cfg.font_thicken);
     }
 
     #[test]

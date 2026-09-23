@@ -119,6 +119,10 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsItalicFontDesc => "斜体文字使用的字体；默认由主字体合成。",
         L10nKey::SettingsFontLigatures => "字体连字",
         L10nKey::SettingsFontLigaturesDesc => "为终端文字启用常见的编程连字特性。",
+        L10nKey::SettingsFontThicken => "笔画加粗",
+        L10nKey::SettingsFontThickenDesc => {
+            "macOS 字体平滑：文字画得稍粗，浅色文字最明显。重启 tty7 后生效。"
+        }
         L10nKey::SettingsCursor => "光标",
         L10nKey::SettingsCursorShape => "光标形状",
         L10nKey::SettingsCursorShapeDesc => "终端光标的绘制方式。",
@@ -770,6 +774,9 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         }
         L10nKey::SettingsSearchFontLigaturesKeywords => {
             "字体连字 连字 字形 typography ligatures glyph fira"
+        }
+        L10nKey::SettingsSearchFontThickenKeywords => {
+            "字体平滑 加粗 变细 字重 笔画 font smoothing thicken bold weight thin AppleFontSmoothing"
         }
         L10nKey::SettingsSearchFontSizeKeywords => {
             "字号 字体大小 文字 放大 缩小 typography font size bigger smaller zoom"
