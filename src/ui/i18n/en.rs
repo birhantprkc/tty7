@@ -9,7 +9,7 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::SettingsEditShortcuts => "Edit shortcuts…",
         L10nKey::SettingsModifiedOnly => "Modified only",
         L10nKey::SettingsModified => "Modified",
-        L10nKey::SettingsResetValue => "Reset setting",
+        L10nKey::SettingsResetValue => "Reset to default",
         L10nKey::SettingsSearchResults => "Search results",
         L10nKey::SettingsOpenSetting => "Open setting",
         L10nKey::SettingsNoModified => "No modified settings match this filter.",
@@ -75,7 +75,7 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::RememberKeychain => "Remember (keychain)",
         L10nKey::Cancel => "Cancel",
         L10nKey::Close => "Close",
-        L10nKey::QuitStopServerTitle => "Quit and Stop Server?",
+        L10nKey::QuitStopServerTitle => "Quit and stop tty7 server?",
         L10nKey::QuitStopServerBody => {
             "This quits tty7 and stops tty7 server; anything running in your shells is terminated. Your tabs and layout reopen with fresh shells next launch. (Closing the window only retires tty7 to the tray — the shells keep running.)"
         }
@@ -403,7 +403,7 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::SettingsOff => "Off",
         L10nKey::SettingsShell => "Shell",
         L10nKey::SettingsShellIntro => {
-            "The program each new terminal launches. Leave Program empty to use the platform default ({default})."
+            "The program each new terminal launches. Leave Shell program empty to use the platform default ({default})."
         }
         L10nKey::SettingsProgram => "Shell program",
         L10nKey::SettingsProgramDesc => {
@@ -535,7 +535,7 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::SettingsOptionAsMetaDesc => {
             "⌥+key sends the escape chord shells expect (⌥B = back one word) instead of typing a special character (∫)."
         }
-        L10nKey::SettingsAgentsIntro => "Agents",
+        L10nKey::SettingsAgentsIntro => "AI agents",
         L10nKey::SettingsAgentsIntroDesc => {
             "Hooks give panes running these agents live status (working / waiting / done) in the tab bar. Only inside tty7."
         }

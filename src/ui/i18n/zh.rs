@@ -15,7 +15,7 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsUnsavedTitle => "离开前保存更改？",
         L10nKey::SettingsUnsavedBody => "可以保存更改、放弃更改，或继续编辑。",
         L10nKey::SettingsSaveChanges => "保存更改",
-        L10nKey::SettingsThemeDraft => "主题更改正在预览，保存后才会写入文件。",
+        L10nKey::SettingsThemeDraft => "正在预览主题更改。保存以保留，取消以还原。",
         L10nKey::SettingsSaveError => "无法保存更改：{error}",
         L10nKey::SettingsRetrySave => "重新保存",
 
@@ -70,9 +70,9 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::RememberKeychain => "记住（钥匙串）",
         L10nKey::Cancel => "取消",
         L10nKey::Close => "关闭",
-        L10nKey::QuitStopServerTitle => "退出并停止 server？",
+        L10nKey::QuitStopServerTitle => "退出并停止 tty7 server？",
         L10nKey::QuitStopServerBody => {
-            "这会退出 tty7 并停止tty7 server，shell 里正在跑的东西都会被终止。标签页和布局会保留，下次启动时以全新的 shell 打开。（只关窗口的话应用收进托盘，shell 继续跑。）"
+            "这会退出 tty7 并停止 tty7 server，shell 里正在跑的东西都会被终止。标签页和布局会保留，下次启动时以全新的 shell 打开。（只关窗口的话应用收进托盘，shell 继续跑。）"
         }
         L10nKey::QuitAndStop => "退出并停止",
         L10nKey::CloseSshConnectionTitle => "关闭这个 SSH 连接？",
@@ -247,8 +247,8 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
             "在关闭带有活动 SSH 会话的标签页或窗格前请求确认。"
         }
         L10nKey::SettingsNewHost => "新主机",
-        L10nKey::SettingsDiscardChangesTitle => "丢弃未保存的改动？",
-        L10nKey::SettingsDiscardChangesBody => "你正在编辑的连接有还没保存的改动。",
+        L10nKey::SettingsDiscardChangesTitle => "放弃未保存的更改？",
+        L10nKey::SettingsDiscardChangesBody => "当前连接有未保存的更改。",
         L10nKey::SettingsKeepEditing => "继续编辑",
         L10nKey::SettingsName => "名称",
         L10nKey::SettingsNameDesc => "此连接的标签。",
@@ -363,7 +363,7 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsOff => "关",
         L10nKey::SettingsShell => "Shell",
         L10nKey::SettingsShellIntro => {
-            "每个新终端启动的程序。将“程序”留空可使用平台默认值（{default}）。"
+            "每个新终端启动的程序。将“Shell 程序”留空可使用平台默认值（{default}）。"
         }
         L10nKey::SettingsProgram => "Shell 程序",
         L10nKey::SettingsProgramDesc => "PATH 中的可执行文件名或绝对路径，例如 zsh、fish、pwsh。",
@@ -384,8 +384,8 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
             "仅适用于没有目录可继承的 shell，例如窗口的第一个标签页。新标签页和分屏仍继承活动窗格的目录，已打开的 shell 继续运行。"
         }
         L10nKey::SettingsScrolling => "滚动",
-        L10nKey::SettingsScrollback => "终端输出历史",
-        L10nKey::SettingsScrollbackDesc => "每个窗格保留的历史行数。仅适用于新窗格。",
+        L10nKey::SettingsScrollback => "终端输出历史行数",
+        L10nKey::SettingsScrollbackDesc => "每个窗格保留的终端输出行数。仅适用于新窗格。",
         L10nKey::SettingsScrollSpeed => "滚动速度",
         L10nKey::SettingsScrollSpeedDesc => "应用于鼠标滚轮滚动的倍率。",
         L10nKey::SettingsSmoothScroll => "平滑滚动",
@@ -476,11 +476,11 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsOptionAsMetaDesc => {
             "⌥+按键 发送 shell 期望的转义组合键（⌥B = 后退一个词），而不是输入特殊字符（∫）。"
         }
-        L10nKey::SettingsAgentsIntro => "Agents",
+        L10nKey::SettingsAgentsIntro => "AI agent",
         L10nKey::SettingsAgentsIntroDesc => {
-            "hook 让跑这些 agent 的窗格在标签栏实时显示状态（进行中 / 等待中 / 已完成）。仅在 tty7 内生效。"
+            "安装 hook，让运行 AI agent 的窗格在标签栏显示实时状态（进行中 / 等待中 / 已完成）。仅在 tty7 内生效。"
         }
-        L10nKey::SettingsReadingAgentConfig => "正在读取这台机器的 agent 配置…",
+        L10nKey::SettingsReadingAgentConfig => "正在读取这台机器的 AI agent 配置…",
         L10nKey::SettingsStatusNotInstalled => "未安装",
         L10nKey::SettingsStatusInstalled => "已安装",
         L10nKey::SettingsStatusOutdated => "已过时",
@@ -579,7 +579,7 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::KeybindForkSessionLeft => "向左 Fork 会话",
         L10nKey::KeybindForkSessionDown => "向下 Fork 会话",
         L10nKey::KeybindForkSessionUp => "向上 Fork 会话",
-        L10nKey::SettingsAboutDesc1 => "终端工作台：常驻会话、远程工作、agent。",
+        L10nKey::SettingsAboutDesc1 => "终端工作台：持久会话、远程开发、AI agent。",
         L10nKey::SettingsDefaultTerminal => "默认终端",
         L10nKey::SettingsDefaultTerminalDesc => {
             "将 tty7 设为 Unix 可执行文件、SSH 链接和 man 页面链接的 macOS 默认终端。tty7 仍可打开文件夹和脚本，但不会替换 Finder 的文件夹处理程序。自行指定终端的应用可能不会遵循此设置。"
@@ -615,20 +615,20 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         }
         L10nKey::SettingsUpdateChannel => "更新通道",
         L10nKey::SettingsUpdateChannelDesc => {
-            "Stable 跟随正式发布的版本，Nightly 跟随每晚从最新代码构建的版本——更新更快，但没有经过发布测试。"
+            "稳定版（Stable）跟随正式发布的版本；每夜构建（Nightly）跟随每晚从最新代码构建的版本，更新更快，但未经发布测试。"
         }
         L10nKey::SettingsUpdateChannelStable => "稳定版",
         L10nKey::SettingsUpdateChannelNightly => "每夜构建",
         L10nKey::SettingsDaemonStale => "tty7 server 仍运行在 {build}。",
         L10nKey::SettingsDaemonStaleDesc => {
-            "tty7 是原地升级的：界面已是新版，pane 还由旧版 tty7 server 托管。重启 tty7 server 换成新版，代价是 pane 里正在跑的进程全部结束。不急，挑 pane 空闲时再重启。"
+            "tty7 是原地升级的：界面已是新版，窗格还由旧版 tty7 server 托管。重启 tty7 server 换成新版，代价是窗格里正在跑的进程全部结束。不急，挑窗格空闲时再重启。"
         }
         L10nKey::UpdateDialogTitle => "有可用更新",
         L10nKey::UpdateDialogDetail => {
-            "tty7 {version} 已发布，你现在是 {current}。安装会重启应用；tty7 server 不动，pane 里的东西都还在。"
+            "tty7 {version} 已发布，你现在是 {current}。安装会重启应用；tty7 server 不动，窗格里的东西都还在。"
         }
         L10nKey::UpdateDialogDetailWindows => {
-            "tty7 {version} 已发布，你现在是 {current}。安装会重启应用和tty7 server：pane 里的进程会被结束，标签页和布局以全新的 shell 恢复。"
+            "tty7 {version} 已发布，你现在是 {current}。安装会重启应用和 tty7 server：窗格里的进程会被结束，标签页和布局以全新的 shell 恢复。"
         }
         L10nKey::UpdateDialogDetailManual => "tty7 {version} 已发布，你现在是 {current}。{hint}",
         L10nKey::UpdateDialogCannotSelfUpdate => "这份安装无法自行更新。",
@@ -667,15 +667,15 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsCheckUpdatesOnLaunch => "启动时检查更新",
         L10nKey::SettingsCommandLine => "命令行",
         L10nKey::SettingsCommandLineDesc => {
-            "让脚本和 AI Agent 使用随应用提供的 tty7 命令。下次启动生效；关闭后不会移除已安装的命令。"
+            "让脚本和 AI agent 使用随应用提供的 tty7 命令。下次启动生效；关闭后不会移除已安装的命令。"
         }
-        L10nKey::SettingsInstallCliOnPath => "将 `tty7` 命令安装到 PATH",
+        L10nKey::SettingsInstallCliOnPath => "将 tty7 命令安装到 PATH",
         L10nKey::SettingsServer => "tty7 server",
         L10nKey::SettingsServerDesc => "管理这台计算机上的终端会话，让会话在后台持续运行。",
         L10nKey::SettingsRestartServer => "重启 tty7 server…",
         L10nKey::SettingsAppHttpProxy => "更新代理",
         L10nKey::SettingsAppHttpProxyDesc => {
-            "仅用于 tty7 自身的更新检查和下载，不影响面板中运行的程序。留空则跟随系统代理。"
+            "仅用于 tty7 自身的更新检查和下载，不影响窗格中运行的程序。留空则跟随系统代理。"
         }
         L10nKey::SettingsAppHttpProxyInvalid => "不是有效的代理地址，该值未保存。",
         L10nKey::SettingsAgentClaudeCode => "Claude Code",
@@ -910,7 +910,7 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::SwitcherNoMatch => "没有匹配的工作区或机器。",
         L10nKey::AddSshHost => "添加 SSH 主机…",
         L10nKey::ClickForNewWindow => "点击打开新窗口",
-        L10nKey::RestartServer => "重启 server",
+        L10nKey::RestartServer => "重启 tty7 server",
         L10nKey::OtherMachines => "其他机器",
         L10nKey::Ok => "确定",
         L10nKey::SftpNoTransfers => "还没有传输任务。",
@@ -1345,7 +1345,7 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::IoBusy => "有别的程序正占着它。",
         L10nKey::IoTimedOut => "对方没有在规定时间内响应。",
         L10nKey::TreeWindowOpenedEmpty => {
-            "server 没有交出这个窗口的标签页，所以窗口是空的。什么都没丢，它一响应就会回来。如果一直不回来，在命令面板里执行「重启 server」。"
+            "tty7 server 没有交出这个窗口的标签页，所以窗口是空的。什么都没丢，它一响应就会回来。如果一直不回来，在命令面板里执行「重启 tty7 server」。"
         }
         L10nKey::CmdGroupTabsPanes => "标签页与窗格",
         L10nKey::CmdGroupWorkspaces => "工作区",
@@ -1451,13 +1451,13 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::CmdAgentSendGitDiffForReview => "Agent：发送 git diff 以供审查",
         L10nKey::CmdAgentSendGitDiffSubtitle => "git diff → 运行中的编码 agent",
         L10nKey::CmdSettings => "设置…",
-        L10nKey::CmdKeyboardShortcuts => "键盘快捷键",
+        L10nKey::CmdKeyboardShortcuts => "快捷键",
         L10nKey::CmdAboutTty7 => "关于 tty7",
         L10nKey::CmdCheckForUpdates => "检查更新…",
         L10nKey::CmdDocumentation => "文档",
         L10nKey::CmdJoinDiscord => "加入 Discord",
         L10nKey::CmdReportIssue => "报告问题…",
-        L10nKey::CmdRestartServer => "重启 server…",
+        L10nKey::CmdRestartServer => "重启 tty7 server…",
         L10nKey::CmdRestartServerSubtitle => "结束所有运行中的 shell；保留布局",
         L10nKey::CmdQuitTty7 => "退出 tty7",
         L10nKey::CmdQuitTty7Subtitle => "停止服务；结束所有运行中的 shell",
@@ -1465,7 +1465,7 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::CmdQuickConnectSaveProfile => "将“{target}”保存为主机配置…",
         L10nKey::CmdRecent => "最近使用",
         L10nKey::AppRestartServerTitle => "重启 tty7 server？",
-        L10nKey::AppRestartServerFailed => "无法重启tty7 server：{error}",
+        L10nKey::AppRestartServerFailed => "无法重启 tty7 server：{error}",
         L10nKey::AppRestartServerMismatchDetail => {
             "tty7 server 用协议 {protocol}（构建 v{build}），此应用用 {ours}，标签页取不出来。\n\n退出：什么都不变，tty7 server 和 shell 继续运行。\n重启：标签页带全新 shell 回来，现在跑着的东西会被杀掉。"
         }
@@ -1614,17 +1614,17 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::Replace => "覆盖",
         L10nKey::SftpErrorInvalidOctalMode => "无效的八进制模式",
         L10nKey::SettingsDaemonStaleDescInPlace => {
-            "tty7 是原地更新的：应用是新的，面板还跑在旧版上。tty7 server 可以不停机就换成新版，shell 直接延续下来。用 tty7 内置 SSH 客户端的面板除外——那些连接会断开，需要重新打开。"
+            "tty7 是原地更新的：应用是新的，窗格还跑在旧版上。tty7 server 可以不停机就换成新版，shell 直接延续下来。用 tty7 内置 SSH 客户端的窗格除外——那些连接会断开，需要重新打开。"
         }
         L10nKey::AppRestartServerBodyInPlace => {
-            "tty7 server 会原地把自己换成当前这个版本：shell 继续运行，窗口稍后自动连回去。用 tty7 内置 SSH 客户端的面板除外——那些连接会断开，需要重新打开。"
+            "tty7 server 会原地把自己换成当前这个版本：shell 继续运行，窗口稍后自动连回去。用 tty7 内置 SSH 客户端的窗格除外——那些连接会断开，需要重新打开。"
         }
         L10nKey::PaneRestoredScreenBanner => {
             "已恢复的画面 —— 下面是新的 shell，上面的内容都已不在运行"
         }
         L10nKey::SettingsPerPaneHistory => "各窗格使用独立命令历史",
         L10nKey::SettingsPerPaneHistoryDescription => {
-            "上方向键翻的是这个面板里跑过的命令，而不是所有面板混在一起。新面板从已有历史开始，关闭时把新增的写回去。只对 tty7 能接管的 bash 和 zsh 面板生效；用你自己参数启动的 shell 不受影响。"
+            "上方向键翻的是这个窗格里跑过的命令，而不是所有窗格混在一起。新窗格从已有历史开始，关闭时把新增的写回去。只对 tty7 能接管的 bash 和 zsh 窗格生效；用你自己参数启动的 shell 不受影响。"
         }
         L10nKey::IntegrationNoticeBlocked => {
             "“{wrapper}”截获了此窗格的 shell 上报，内联补全和 Ctrl+R 菜单不可用。shell 自带的历史搜索仍可使用。"
@@ -1703,7 +1703,7 @@ pub fn translate_zh(key: L10nKey) -> Option<&'static str> {
         L10nKey::AppMenuRevealInFolder => "打开所在文件夹",
         L10nKey::AppMenuCopyLinkPath => "复制路径",
         L10nKey::AppMenuDocumentation => "tty7 文档",
-        L10nKey::AppMenuKeyboardShortcuts => "键盘快捷键",
+        L10nKey::AppMenuKeyboardShortcuts => "快捷键",
         L10nKey::AppMenuJoinDiscord => "加入 Discord",
         L10nKey::AppMenuReportIssue => "报告问题…",
         L10nKey::AppMenuRestartServer => "重启 tty7 server…",

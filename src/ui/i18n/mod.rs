@@ -1602,7 +1602,6 @@ mod tests {
             // translation here would be less clear, not more.
             L10nKey::SettingsShell,
             L10nKey::CmdGroupAgents,
-            L10nKey::SettingsAgentsIntro,
         ];
 
         for &key in KEPT_IN_ENGLISH {

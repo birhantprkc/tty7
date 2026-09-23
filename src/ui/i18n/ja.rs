@@ -76,9 +76,9 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::RememberKeychain => "キーチェーンに保存",
         L10nKey::Cancel => "キャンセル",
         L10nKey::Close => "閉じる",
-        L10nKey::QuitStopServerTitle => "tty7 を終了してサーバーを停止しますか？",
+        L10nKey::QuitStopServerTitle => "tty7 を終了して tty7 server を停止しますか？",
         L10nKey::QuitStopServerBody => {
-            "tty7 を終了してtty7 serverを停止します。シェルで実行中のものはすべて終了します。タブとレイアウトは次回起動時に新しいシェルで開きます。（ウィンドウを閉じるだけならトレイに退避し、シェルは動き続けます）"
+            "tty7 を終了して tty7 server を停止します。シェルで実行中のものはすべて終了します。タブとレイアウトは次回起動時に新しいシェルで開きます。（ウィンドウを閉じるだけならトレイに退避し、シェルは動き続けます）"
         }
         L10nKey::QuitAndStop => "終了して停止",
         L10nKey::CloseSshConnectionTitle => "この SSH 接続を閉じますか？",
@@ -409,7 +409,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsOff => "オフ",
         L10nKey::SettingsShell => "シェル",
         L10nKey::SettingsShellIntro => {
-            "新しいターミナルで起動するプログラム。空欄ならプラットフォーム既定の {default} を使います"
+            "新しいターミナルで起動するプログラム。「シェルプログラム」を空欄にすると、プラットフォーム既定の {default} を使います。"
         }
         L10nKey::SettingsProgram => "シェルプログラム",
         L10nKey::SettingsProgramDesc => {
@@ -543,7 +543,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsOptionAsMetaDesc => {
             "⌥+キーでシェルが期待するエスケープシーケンス（⌥B = 単語 1 つ戻る）を送信し、特殊文字（∫）を入力しない"
         }
-        L10nKey::SettingsAgentsIntro => "エージェント",
+        L10nKey::SettingsAgentsIntro => "AI エージェント",
         L10nKey::SettingsAgentsIntroDesc => {
             "フックにより、これらのエージェントを実行するペインの状態（作業中 / 待機中 / 完了）がタブバーに表示されます。tty7 内でのみ有効"
         }
@@ -706,16 +706,16 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         }
         L10nKey::SettingsUpdateChannelStable => "安定版",
         L10nKey::SettingsUpdateChannelNightly => "ナイトリー",
-        L10nKey::SettingsDaemonStale => "tty7 serverは {build} のままです。",
+        L10nKey::SettingsDaemonStale => "tty7 server は {build} のままです。",
         L10nKey::SettingsDaemonStaleDesc => {
-            "tty7 はその場で更新されました。アプリは新しく、ペインはまだ以前のビルドのtty7 serverが処理しています。再起動すると新しいビルドに切り替わり、ペインで動いているプロセスはすべて終了します。急ぐ必要はなく、ペインが空いているときにどうぞ"
+            "tty7 はその場で更新されました。アプリは新しく、ペインはまだ以前のビルドの tty7 server が処理しています。再起動すると新しいビルドに切り替わり、ペインで動いているプロセスはすべて終了します。急ぐ必要はなく、ペインが空いているときにどうぞ"
         }
         L10nKey::UpdateDialogTitle => "アップデートがあります",
         L10nKey::UpdateDialogDetail => {
-            "tty7 {version} が利用できます（現在 {current}）。インストールするとアプリが再起動します。tty7 serverは動いたままなので、ペインの中身は残ります"
+            "tty7 {version} が利用できます（現在 {current}）。インストールするとアプリが再起動します。tty7 server は動いたままなので、ペインの中身は残ります"
         }
         L10nKey::UpdateDialogDetailWindows => {
-            "tty7 {version} が利用できます（現在 {current}）。インストールするとアプリとtty7 serverが再起動します。ペインのプロセスは終了し、タブとレイアウトは新しいシェルで復元されます"
+            "tty7 {version} が利用できます（現在 {current}）。インストールするとアプリと tty7 server が再起動します。ペインのプロセスは終了し、タブとレイアウトは新しいシェルで復元されます"
         }
         L10nKey::UpdateDialogDetailManual => {
             "tty7 {version} が利用できます（現在 {current}）。{hint}"
@@ -767,7 +767,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::SettingsServerDesc => {
             "このコンピューターのターミナルセッションを管理し、バックグラウンドで実行し続けます。"
         }
-        L10nKey::SettingsRestartServer => "tty7 serverを再起動…",
+        L10nKey::SettingsRestartServer => "tty7 server を再起動…",
         L10nKey::SettingsAppHttpProxy => "アップデート用プロキシ",
         L10nKey::SettingsAppHttpProxyDesc => {
             "tty7 自身の更新チェックとダウンロードにのみ使用し、ペインで実行中のプログラムには影響しません。空欄ならシステムのプロキシに従います"
@@ -1009,7 +1009,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::SwitcherNoMatch => "一致するワークスペースまたはマシンがありません",
         L10nKey::AddSshHost => "SSH ホストを追加…",
         L10nKey::ClickForNewWindow => "クリックで新しいウィンドウを開く",
-        L10nKey::RestartServer => "サーバーを再起動",
+        L10nKey::RestartServer => "tty7 server を再起動",
         L10nKey::OtherMachines => "その他のマシン",
         L10nKey::Ok => "OK",
         L10nKey::SftpNoTransfers => "転送はまだありません",
@@ -1357,7 +1357,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         }
         L10nKey::RemoteThisComputer => "このコンピュータ",
         L10nKey::RemoteProfileGone => "削除されたプロファイル",
-        L10nKey::RemoteRestartTitle => "「{machine}」上の tty7 サーバーを再起動しますか？",
+        L10nKey::RemoteRestartTitle => "「{machine}」上の tty7 serverを再起動しますか？",
         L10nKey::RemoteRestartBody => {
             "{machine} 上のシェルは、表示されていないものも含めてすべて終了します。ワークスペースとレイアウトは保持され、新しいシェルで開きます"
         }
@@ -1365,13 +1365,13 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
             "tty7 は {machine} に対応するサーバーをインストールして起動します。\n\n{machine} で実行中のすべてのセッションが終了します。このウィンドウが接続していないセッションも含みます"
         }
         L10nKey::RemoteRestartFailedTitle => {
-            "「{machine}」上の tty7 サーバーは再起動されませんでした"
+            "「{machine}」上の tty7 serverは再起動されませんでした"
         }
         L10nKey::RemoteRestartFailedBody => {
             "{error}\n\nそこで実行中のセッションは古いビルドのままです。セッションがなくなっている場合は、再接続時にこのビルドのサーバーが起動します"
         }
         L10nKey::RemoteHostUnreachable => "{machine} に到達できませんでした: {error}",
-        L10nKey::RemoteInstallTitle => "「{machine}」に tty7 サーバーをインストールしますか？",
+        L10nKey::RemoteInstallTitle => "「{machine}」に tty7 serverをインストールしますか？",
         L10nKey::RemoteInstallDetail => {
             "tty7 はサーバーバイナリを {machine} に書き込み、{machine} でワークスペースをホストできるようにします。{machine} 上の他のものには触れず、sudo も使いません。\n\n{path_label}\u{2003}{path}\n{version_label}\u{2003}{version}\n{size_label}\u{2003}{size}\n{from_label}\u{2003}{from}\n{sha_label}\u{2003}{sha256}\n\n{silent_upgrades}"
         }
@@ -1384,7 +1384,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
             "このマシンでの今後のアップグレードはサイレントにインストールされます"
         }
         L10nKey::RemoteInstallBytes => "バイト",
-        L10nKey::RemoteMismatchTitle => "「{machine}」上の tty7 サーバーを更新しますか？",
+        L10nKey::RemoteMismatchTitle => "「{machine}」上の tty7 serverを更新しますか？",
         L10nKey::RemoteMismatchDetail => {
             "{machine} はサーバー {running} で動いていますが、このクライアント（{wanted}）はそのプロトコルを話せません。対応するサーバーはインストール済みですが、セッションは実行中のサーバー上にあります。\n\n{replace_server}\u{2003}{wanted} に置き換え、そのサーバー上のセッションをすべて終了します。\n{cancel}\u{2003}{machine} はそのままです。このウィンドウは接続しません"
         }
@@ -1393,10 +1393,10 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::RemoteMismatchUnknownBuild => "不明なビルド",
         L10nKey::RemoteMismatchUnknownBuildFromExe => "不明なビルド（{exe} から）",
         L10nKey::RemoteServerOutdated => {
-            "{machine} の tty7 サーバーが古く（{build}）、この tty7 からは通信できません。更新すると接続できます"
+            "{machine} の tty7 serverが古く（{build}）、この tty7 からは通信できません。更新すると接続できます"
         }
         L10nKey::RemoteServerTooNew => {
-            "{machine} の tty7 サーバー（{build}）は、この tty7 より新しいバージョンです。このコンピューターの tty7 を更新するか、向こうのサーバーを対応するものに置き換えてください"
+            "{machine} の tty7 server（{build}）は、この tty7 より新しいバージョンです。このコンピューターの tty7 を更新するか、向こうのサーバーを対応するものに置き換えてください"
         }
         L10nKey::RemoteDaemonStartFailed => {
             "tty7 のローカルサーバーを起動できませんでした: {error}"
@@ -1414,13 +1414,13 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
             "ローカルの --stdio ワークスペースには SSH 接続がありません"
         }
         L10nKey::RemoteHostNotTty7 => {
-            "{machine} は応答しましたが、tty7 サーバーとしては応答しませんでした: {error}"
+            "{machine} は応答しましたが、tty7 serverとしては応答しませんでした: {error}"
         }
         L10nKey::RemoteWorkspaceListFailed => {
             "{machine} に接続しましたが、ワークスペースの一覧を取得できませんでした: {error}"
         }
         L10nKey::RemoteServerRestartFailed => {
-            "{machine} 上の tty7 サーバーを再起動できませんでした: {error}"
+            "{machine} 上の tty7 serverを再起動できませんでした: {error}"
         }
         L10nKey::RemoteNoRouteToHost => "tty7 は {machine} に到達する手段を失いました",
         L10nKey::RemoteMachineTreeUnexpectedReply => {
@@ -1490,7 +1490,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::IoBusy => "他のプログラムが使用中です。",
         L10nKey::IoTimedOut => "時間内に応答がありませんでした。",
         L10nKey::TreeWindowOpenedEmpty => {
-            "サーバーがこのウィンドウのタブを渡さなかったため、空のまま開きました。失われたものはなく、応答すれば戻ります。戻らない場合はコマンドパレットの「サーバーを再起動」を実行してください"
+            "サーバーがこのウィンドウのタブを渡さなかったため、空のまま開きました。失われたものはなく、応答すれば戻ります。戻らない場合はコマンドパレットの「tty7 server を再起動」を実行してください"
         }
         L10nKey::CmdGroupTabsPanes => "タブとペイン",
         L10nKey::CmdGroupWorkspaces => "ワークスペース",
@@ -1602,7 +1602,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::CmdDocumentation => "ドキュメント",
         L10nKey::CmdJoinDiscord => "Discord に参加",
         L10nKey::CmdReportIssue => "問題を報告…",
-        L10nKey::CmdRestartServer => "サーバーを再起動…",
+        L10nKey::CmdRestartServer => "tty7 server を再起動…",
         L10nKey::CmdRestartServerSubtitle => "実行中のすべてのシェルを終了し、レイアウトは保持",
         L10nKey::CmdQuitTty7 => "tty7 を終了",
         L10nKey::CmdQuitTty7Subtitle => "サーバーを停止し、実行中のすべてのシェルを終了",
@@ -1610,22 +1610,22 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::CmdQuickConnectSaveProfile => "「{target}」をプロファイルとして保存…",
         L10nKey::CmdRecent => "最近",
         L10nKey::AppRestartServerTitle => "tty7 server を再起動しますか？",
-        L10nKey::AppRestartServerFailed => "tty7 serverを再起動できませんでした: {error}",
+        L10nKey::AppRestartServerFailed => "tty7 server を再起動できませんでした: {error}",
         L10nKey::AppRestartServerMismatchDetail => {
-            "tty7 serverはプロトコル {protocol}（ビルド v{build}）、このアプリは {ours} のため、タブを取り出せません。\n\n終了：何も変わりません。tty7 serverもシェルも動き続けます。\n再起動：タブは新しいシェルで戻り、いま実行中のものは終了します"
+            "tty7 server はプロトコル {protocol}（ビルド v{build}）、このアプリは {ours} のため、タブを取り出せません。\n\n終了：何も変わりません。tty7 server もシェルも動き続けます。\n再起動：タブは新しいシェルで戻り、いま実行中のものは終了します"
         }
         L10nKey::AppRestartServerDialectDetail => {
-            "tty7 serverは制御方言 v{dialect}（ビルド v{build}）、このアプリは v{ours} のため、ウィンドウはどれも空で開きます。\n\n終了：何も変わりません。tty7 serverもシェルも動き続けます。\n再起動：タブは新しいシェルで戻り、いま実行中のものは終了します"
+            "tty7 server は制御方言 v{dialect}（ビルド v{build}）、このアプリは v{ours} のため、ウィンドウはどれも空で開きます。\n\n終了：何も変わりません。tty7 server もシェルも動き続けます。\n再起動：タブは新しいシェルで戻り、いま実行中のものは終了します"
         }
         L10nKey::AppRestartServerDialectNewerDetail => {
-            "tty7 serverは制御方言 v{dialect}（ビルド v{build}）、このアプリは v{ours} のため、ウィンドウはどれも空で開きます。\n\n終了して新しいビルドを入れる：根本的な解決で、シェルはそのまま残ります。\n再起動：タブは新しいシェルで戻り、いま実行中のものは終了します"
+            "tty7 server は制御方言 v{dialect}（ビルド v{build}）、このアプリは v{ours} のため、ウィンドウはどれも空で開きます。\n\n終了して新しいビルドを入れる：根本的な解決で、シェルはそのまま残ります。\n再起動：タブは新しいシェルで戻り、いま実行中のものは終了します"
         }
         L10nKey::AppRestartServerOldDetail => {
-            "tty7 serverはバージョン照合より前のもので、何を話すか分かりません。\n\n終了：何も変わりません。tty7 serverもシェルも動き続けます。\n再起動：タブは新しいシェルで戻り、いま実行中のものは終了します"
+            "tty7 server はバージョン照合より前のもので、何を話すか分かりません。\n\n終了：何も変わりません。tty7 server もシェルも動き続けます。\n再起動：タブは新しいシェルで戻り、いま実行中のものは終了します"
         }
         L10nKey::AppRestart => "再起動",
         L10nKey::AppRestartServerNoServer => {
-            "{label} には再起動できるtty7 serverがありません。このコンピュータが --stdio で実行しているプログラムです。代わりにワークスペースを止めてください"
+            "{label} には再起動できる tty7 server がありません。このコンピュータが --stdio で実行しているプログラムです。代わりにワークスペースを止めてください"
         }
         L10nKey::AppRestartServerBody => {
             "このコンピュータのシェルはすべて終了します。タブとレイアウトは保持され、新しいシェルで開きます"
@@ -1777,10 +1777,10 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::Replace => "置き換える",
         L10nKey::SftpErrorInvalidOctalMode => "無効な 8 進数モードです",
         L10nKey::SettingsDaemonStaleDescInPlace => {
-            "tty7 はその場で更新されました。アプリは新しく、ペインはまだ前のビルドで動いています。tty7 serverは停止せずに新しいビルドへ置き換えられるので、シェルはそのまま引き継がれます。tty7 内蔵の SSH クライアントを使うペインだけは例外で、その接続は閉じられ、開き直しが必要です"
+            "tty7 はその場で更新されました。アプリは新しく、ペインはまだ前のビルドで動いています。tty7 server は停止せずに新しいビルドへ置き換えられるので、シェルはそのまま引き継がれます。tty7 内蔵の SSH クライアントを使うペインだけは例外で、その接続は閉じられ、開き直しが必要です"
         }
         L10nKey::AppRestartServerBodyInPlace => {
-            "tty7 serverは停止せずに自分自身をこのビルドへ置き換えます。シェルは動いたままで、ウィンドウはすぐに再接続します。tty7 内蔵の SSH クライアントを使うペインだけは例外で、その接続は閉じられ、開き直しが必要です"
+            "tty7 server は停止せずに自分自身をこのビルドへ置き換えます。シェルは動いたままで、ウィンドウはすぐに再接続します。tty7 内蔵の SSH クライアントを使うペインだけは例外で、その接続は閉じられ、開き直しが必要です"
         }
         L10nKey::PaneRestoredScreenBanner => {
             "復元された画面 — 以下は新しいシェルで、これより上のものは動いていません"
@@ -1871,7 +1871,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::AppMenuKeyboardShortcuts => "キーボードショートカット",
         L10nKey::AppMenuJoinDiscord => "Discord に参加",
         L10nKey::AppMenuReportIssue => "問題を報告…",
-        L10nKey::AppMenuRestartServer => "tty7 serverを再起動…",
+        L10nKey::AppMenuRestartServer => "tty7 server を再起動…",
         L10nKey::WindowUntitled => "無題",
         L10nKey::TrayShowTty7 => "tty7 を表示",
         L10nKey::TrayNotifications => "通知",
