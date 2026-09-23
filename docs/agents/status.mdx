@@ -29,11 +29,10 @@ ships a newer hook.
 </Note>
 
 <Note>
-  `cursor-agent` does not yet send Cursor's `beforeSubmitPrompt` hook, so a
-  Cursor pane turns **working** at the turn's first tool call rather than when
-  you press Enter, and a turn that answers without calling a tool never shows
-  as working at all. The session id is recorded either way, so Copy Session ID
-  and resume work from the first hook.
+  `cursor-agent -p` (print mode) sends neither of Cursor's turn hooks, so a
+  headless run records its session id — Copy Session ID and resume still
+  work — but shows no status dot. The interactive `cursor-agent` shows the
+  full working → done cycle.
 </Note>
 
 <Note>

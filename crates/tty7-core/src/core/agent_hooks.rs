@@ -947,23 +947,19 @@ const CRUSH_HOOK_EVENTS: &[(&str, &str)] = &[("PreToolUse", "tool-complete")];
 /// [`HookAgent::flat_hook_map`]). The payloads name the session
 /// `conversation_id`, which [`build_hook_sequence`] reads as the session id.
 ///
-/// `cursor-agent` does not fire every event the editor does. As of Cursor's
-/// own forum (2026-04) the CLI sends `sessionStart`, `postToolUse` and `stop`
-/// among these, but not `beforeSubmitPrompt`, so nothing marks the start of
-/// a turn. `postToolUse` therefore reports `prompt-submit`: the first tool
-/// call is the earliest evidence that a turn is running, and — unlike Crush,
-/// which has no `Stop` — Cursor's `stop` is there to close it, with a status
-/// of `completed`, `aborted` or `error`. A turn that answers without calling a tool
-/// never shows as working. `beforeSubmitPrompt` stays in the table so the
-/// turn starts on time once the CLI sends it; a doubled `prompt-submit` is
-/// idempotent.
+/// The interactive `cursor-agent` TUI — what runs in a tty7 pane — fires the
+/// editor's turn hooks: `beforeSubmitPrompt` opens a turn and `stop` closes
+/// it, with a status of `completed`, `aborted` or `error`. `postToolUse` is
+/// plain tool activity. Print mode (`cursor-agent -p`) sends neither
+/// `beforeSubmitPrompt` nor `stop` (a known gap per Cursor staff, 2026-08),
+/// so a `-p` run records its session but shows no status.
 ///
 /// None of these are Cursor's permission hooks, which would block the agent
 /// on the empty stdout `tty7 agent-hook` prints.
 const CURSOR_HOOK_EVENTS: &[(&str, &str)] = &[
     ("sessionStart", "session-start"),
     ("beforeSubmitPrompt", "prompt-submit"),
-    ("postToolUse", "prompt-submit"),
+    ("postToolUse", "tool-complete"),
     ("stop", "stop"),
     ("sessionEnd", "session-end"),
 ];
@@ -2096,10 +2092,10 @@ mod tests {
         assert_eq!(ev.cwd, None, "an empty root list names no directory");
     }
 
-    /// `cursor-agent` sends no `beforeSubmitPrompt`, so the first tool call is
-    /// what starts a turn — and its `stop` has to close it again.
+    /// A `cursor-agent` turn opens on `beforeSubmitPrompt` and closes on
+    /// `stop`; tool calls in between only move the activity counter.
     #[test]
-    fn cursor_cli_turns_start_on_the_first_tool_call_and_end_on_stop() {
+    fn cursor_cli_turns_open_on_submit_and_close_on_stop() {
         use crate::core::cli_agent::{AgentSessionState, AgentStatus};
 
         let apply_hook = |state: &mut AgentSessionState, hook: &str, input: &str| {
@@ -2124,16 +2120,18 @@ mod tests {
         for turn in 1..=2 {
             apply_hook(
                 &mut state,
+                "beforeSubmitPrompt",
+                r#"{"conversation_id":"cur-1","prompt":"Fix the build"}"#,
+            );
+            assert_eq!(state.status, AgentStatus::Working, "turn {turn}");
+            let before = state.activity;
+            apply_hook(
+                &mut state,
                 "postToolUse",
                 r#"{"conversation_id":"cur-1","tool_name":"Shell","cwd":"/repo"}"#,
             );
             assert_eq!(state.status, AgentStatus::Working, "turn {turn}");
-            apply_hook(
-                &mut state,
-                "postToolUse",
-                r#"{"conversation_id":"cur-1","tool_name":"Read","cwd":"/repo"}"#,
-            );
-            assert_eq!(state.status, AgentStatus::Working, "turn {turn}");
+            assert_eq!(state.activity, before + 1, "a tool call is activity");
             apply_hook(
                 &mut state,
                 "stop",
@@ -2143,11 +2141,11 @@ mod tests {
             assert_eq!(state.turns, turn, "each turn is counted once");
         }
 
-        // The editor does send it, and it must agree with the CLI's stand-in.
+        // A turn that answers without a tool still shows as working.
         apply_hook(
             &mut state,
             "beforeSubmitPrompt",
-            r#"{"conversation_id":"cur-1","prompt":"Fix the build"}"#,
+            r#"{"conversation_id":"cur-1","prompt":"Explain this"}"#,
         );
         assert_eq!(state.status, AgentStatus::Working);
         apply_hook(
