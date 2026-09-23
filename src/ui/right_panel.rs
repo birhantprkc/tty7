@@ -429,6 +429,7 @@ impl Tty7App {
             self.sftp_close_browser(cx);
         }
         if !panel_open {
+            self.sftp_panel.panel_was_closed = true;
             return None;
         }
         let width = self.right_panel_px(window, cx);
