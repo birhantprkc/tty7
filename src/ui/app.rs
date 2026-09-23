@@ -2031,6 +2031,46 @@ impl Tty7App {
         self.confirm_restart_remote_server(target, label, window, cx);
     }
 
+    /// The palette's "Update tty7 server" for this computer. The app bundle
+    /// already carries the new server, so updating it is restarting onto this
+    /// build — the same restart, with the same confirmation, as everywhere
+    /// else. Only when the running server is already this build is there
+    /// nothing to do, and then the user is told so rather than asked to end
+    /// their shells for no change.
+    fn update_local_server(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if crate::daemon::spawn::local_daemon_is_this_build() {
+            window.push_notification(
+                t_fmt(
+                    L10nKey::AppLocalServerAlreadyCurrent,
+                    &[("build", env!("CARGO_PKG_VERSION"))],
+                ),
+                cx,
+            );
+            return;
+        }
+        self.restart_daemon(window, cx);
+    }
+
+    /// The same for the machine this window's workspace lives on. The palette
+    /// only offers it there, but the row can outlive a workspace switch, so the
+    /// checks are made again rather than trusted.
+    fn update_window_remote_server(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(remote) = WorkspaceStore::remote_ref(cx, self.workspace) else {
+            self.update_local_server(window, cx);
+            return;
+        };
+        let target = remote.target.clone();
+        let label = crate::ui::remote_connect::route_label(cx, &remote);
+        if !target.hosts_our_server() {
+            window.push_notification(
+                t_fmt(L10nKey::AppRestartServerNoServer, &[("label", &label)]),
+                cx,
+            );
+            return;
+        }
+        self.confirm_update_remote_server(target, label, window, cx);
+    }
+
     pub(crate) fn restart_daemon(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Two different actions wearing one name. Where the service can rewrite
         // itself in place, nothing in a pane is interrupted and promising the
@@ -5332,6 +5372,9 @@ impl Tty7App {
                 right_panel_visible: self.right_panel_visible,
                 document_filled: self.document_layout(cx)
                     == crate::core::config::DocumentLayout::Fill,
+                remote_server: WorkspaceStore::remote_ref(cx, self.workspace)
+                    .filter(|remote| remote.target.hosts_our_server())
+                    .map(|remote| crate::ui::remote_connect::route_label(cx, &remote)),
             },
         );
 
@@ -5565,6 +5608,8 @@ impl Tty7App {
             // tray icon.
             Quit => self.quit_stop_sessions(window, cx),
             RestartDaemon => self.restart_window_daemon(window, cx),
+            UpdateLocalServer => self.update_local_server(window, cx),
+            UpdateRemoteServer => self.update_window_remote_server(window, cx),
             ToggleSftp => self.toggle_sftp(window, cx),
             ShowSshForwards => self.show_ssh_forwards(window, cx),
             ToggleCodePanel => self.toggle_code_panel(window, cx),

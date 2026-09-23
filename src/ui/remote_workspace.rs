@@ -879,7 +879,7 @@ impl Tty7App {
     ) {
         let label = mismatch.host.clone();
         match remote_connect::mismatch_target(&mismatch) {
-            Some(target) => self.replace_remote_server(target, label, window, cx),
+            Some(target) => self.replace_remote_server(target, label, false, window, cx),
             None => {
                 let e = t_fmt(L10nKey::RemoteNoRouteToHost, &[("machine", &label)]);
                 self.report_remote_host_error(None, &label, &e, window, cx);
@@ -979,21 +979,73 @@ impl Tty7App {
                 return;
             }
             let _ = this.update_in(cx, |this, window, cx| {
-                this.replace_remote_server(target, label, window, cx);
+                this.replace_remote_server(target, label, false, window, cx);
             });
         })
         .detach();
     }
 
-    fn replace_remote_server(
+    /// The palette's "Update tty7 server" for a remote host: put this build's
+    /// server there even when one of our dialect already is. Between dialect
+    /// bumps that is the only way a daemon-side fix reaches a machine — the
+    /// mismatch path never fires, and a restart relaunches the same old file.
+    ///
+    /// Asked for only where the local daemon can route it. One that predates
+    /// the action cannot even decode the request and hangs up without a word,
+    /// so the user is told which server to update first instead.
+    pub(crate) fn confirm_update_remote_server(
         &mut self,
         target: RemoteTarget,
         label: String,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if !crate::daemon::spawn::local_daemon_supports(
+            crate::daemon::protocol::FEATURE_UPDATE_SERVER,
+        ) {
+            window.push_notification(
+                t_fmt(
+                    L10nKey::RemoteUpdateNeedsLocalServer,
+                    &[("machine", &label)],
+                ),
+                cx,
+            );
+            return;
+        }
+        let answer = window.prompt(
+            PromptLevel::Warning,
+            &t_fmt(L10nKey::RemoteMismatchTitle, &[("machine", &label)]),
+            Some(&t_fmt(L10nKey::RemoteUpdateBody, &[("machine", &label)])),
+            &crate::ui::confirm_answers(
+                t(L10nKey::RemoteMismatchReplaceServer),
+                t(L10nKey::Cancel),
+            ),
+            cx,
+        );
+        cx.spawn(async move |this, cx| {
+            if !matches!(answer.await, Ok(0)) {
+                return;
+            }
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.replace_remote_server(target, label, true, window, cx);
+            });
+        })
+        .detach();
+    }
+
+    /// `force` uploads even over a server that already speaks our dialect —
+    /// the update, as opposed to the mismatch repair.
+    fn replace_remote_server(
+        &mut self,
+        target: RemoteTarget,
+        label: String,
+        force: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.clear_remote_host_error(&target);
         let route = match remote_connect::control_route(&target, cx) {
+            Ok(header) if force => header.update_server(),
             Ok(header) => header.replace_server(),
             Err(e) => {
                 log::warn!("could not address {label} to replace its server: {e}");
