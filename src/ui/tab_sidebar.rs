@@ -707,9 +707,8 @@ impl Tty7App {
                 let success = added_ink;
                 let danger = removed_ink;
 
-                // A row that is one line is a pill; one that grows a branch
-                // line under its title keeps a card's corners, since a full
-                // radius on a two-line box pinches the text at both ends.
+                // A row that grows a branch line under its title pads itself
+                // out; a one-line row sits at `ROW_HEIGHT`.
                 let two_line = git_line.is_some();
                 let label_region = match rename_input {
                     Some(input) => div()
@@ -881,10 +880,7 @@ impl Tty7App {
                     .gap_2()
                     .pl_2()
                     .pr_2()
-                    .rounded(match two_line {
-                        true => crate::ui::rounding::CARD_RADIUS,
-                        false => crate::ui::rounding::PILL_RADIUS,
-                    })
+                    .rounded(crate::ui::rounding::CARD_RADIUS)
                     .when(is_active, |s| {
                         s.bg(cx.theme().sidebar_accent)
                             .text_color(cx.theme().sidebar_accent_foreground)
@@ -988,7 +984,7 @@ impl Tty7App {
                                     ),
                                 ))
                                 .child(
-                                    div().bg(backing).rounded_full().child(
+                                    div().bg(backing).child(
                                         crate::ui::tab_strip::hit_target(
                                             Button::new(("sidebar-close", i))
                                                 .icon(IconName::Close)
@@ -1473,7 +1469,7 @@ impl Tty7App {
             .mb_1()
             .pl(px(6.))
             .pr_1()
-            .rounded(crate::ui::rounding::PILL_RADIUS)
+            .rounded_lg()
             .bg(cx.theme().muted)
             .child(
                 div()

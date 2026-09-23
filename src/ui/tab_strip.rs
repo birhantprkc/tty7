@@ -1011,7 +1011,7 @@ impl Tty7App {
                 .h(px(28.))
                 .w_full()
                 .px(px(9.))
-                .rounded(crate::ui::rounding::PILL_RADIUS)
+                .rounded_md()
                 .bg(cx.theme().sidebar_accent)
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .child(Input::new(&rename.input).appearance(false).xsmall())
@@ -1094,7 +1094,7 @@ impl Tty7App {
                     .xsmall()
                     .w_full()
                     .h(px(28.))
-                    .rounded(crate::ui::rounding::PILL_RADIUS)
+                    .rounded_md()
                     .tooltip_element(chord_tooltip(
                         t(L10nKey::HomeSwitchWorkspace),
                         "ToggleSwitcher",
