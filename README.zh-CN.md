@@ -35,6 +35,14 @@
 - **编辑器级输入**：建议、补全、高亮、历史搜索，不用装任何插件
 - **远程开发**：文件、仓库、pane 和 git 信息都留在远端机器上，走自带的 SSH 栈
 
+<div align="center">
+
+<a href="assets/tour.mp4"><img src="assets/tour-poster.webp" alt="tty7 一分钟演示：多仓库 agent、一个 agent 通过 CLI 驱动另一个、提示符编辑器、diff、拖动 pane、退出应用后会话仍在运行" width="720" /></a>
+
+<sub>多仓库 agent · agent 驱动 agent · 提示符编辑器 · diff · 拖动 pane · 退出重开，照样在跑</sub>
+
+</div>
+
 ## 安装
 
 macOS、Windows、Linux 的原生构建都在 [**Releases**](https://github.com/l0ng-ai/tty7/releases)：
