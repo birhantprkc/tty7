@@ -20,7 +20,9 @@
 
 <br />
 
-<img src="assets/hero.webp" alt="tty7 with a tab sidebar of agent sessions across several repos, running Claude Code" width="900" />
+<a href="assets/tour.mp4"><img src="assets/tour.webp" alt="One-minute tour of tty7: agents across repos, one agent driving another through the CLI, the prompt editor, diffs, dragging panes, and sessions that survive quitting the app" width="900" /></a>
+
+<sub>▶ <a href="assets/tour.mp4">Watch in full quality</a></sub>
 
 </div>
 
@@ -35,14 +37,6 @@ below follows from that.
 - **Scriptable by agents** — one agent opens a pane for another, hands off a task, waits, and reads the result, with or without the GUI running
 - **Editor-grade input** — suggestions, completion, highlighting, history search, with no plugin to install
 - **Remote development** — files, repos, panes, and git data stay on the remote machine, over a native SSH stack
-
-<div align="center">
-
-<a href="assets/tour.mp4"><img src="assets/tour-poster.webp" alt="One-minute tour of tty7: agents across repos, one agent driving another through the CLI, the prompt editor, diffs, dragging panes, and sessions that survive quitting the app" width="720" /></a>
-
-<sub>Agents across repos · one agent driving another · the prompt editor · diffs · dragging panes · quit, reopen, still running</sub>
-
-</div>
 
 ## Install
 

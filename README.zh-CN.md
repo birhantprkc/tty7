@@ -20,7 +20,9 @@
 
 <br />
 
-<img src="assets/hero.webp" alt="tty7 侧边栏列出多个仓库的 agent 会话，右侧运行 Claude Code" width="900" />
+<a href="assets/tour.mp4"><img src="assets/tour.webp" alt="tty7 一分钟演示：多仓库 agent、一个 agent 通过 CLI 驱动另一个、提示符编辑器、diff、拖动 pane、退出应用后会话仍在运行" width="900" /></a>
+
+<sub>▶ <a href="assets/tour.mp4">观看高清版</a></sub>
 
 </div>
 
@@ -34,14 +36,6 @@
 - **可被 agent 驱动**：一个 agent 能给另一个开 pane、派活、等它跑完、读走结果，GUI 开不开都行
 - **编辑器级输入**：建议、补全、高亮、历史搜索，不用装任何插件
 - **远程开发**：文件、仓库、pane 和 git 信息都留在远端机器上，走自带的 SSH 栈
-
-<div align="center">
-
-<a href="assets/tour.mp4"><img src="assets/tour-poster.webp" alt="tty7 一分钟演示：多仓库 agent、一个 agent 通过 CLI 驱动另一个、提示符编辑器、diff、拖动 pane、退出应用后会话仍在运行" width="720" /></a>
-
-<sub>多仓库 agent · agent 驱动 agent · 提示符编辑器 · diff · 拖动 pane · 退出重开，照样在跑</sub>
-
-</div>
 
 ## 安装
 
