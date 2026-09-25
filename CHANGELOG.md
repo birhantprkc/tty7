@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A port forward can be switched off without losing its rule** (#439). A
+  forward could only be removed, so pointing one local port at a different
+  remote target meant deleting the rule and typing the other one in again. Each
+  forward in the Ports section, and each rule under Settings → SSH → Port
+  forwarding, now has a switch: off releases the listener and keeps the rule in
+  the list, on binds it again from the rule it was made from. Switching one on
+  while another switched-on forward holds its port is refused with a notice
+  naming that forward, rather than failing at bind time. A switch flipped in the
+  panel on a rule that came from a saved host is written back to that host, so
+  the next connection opens the same set; a rule saved switched off is listed
+  but not opened. Profiles saved before this load with every rule on.
+
 - **SSH tabs can be named after the host instead of whatever the remote shell
   titles itself** (#726). **Settings → Window & Tabs → SSH tab title** is
   *Dynamic* (the default, and what tty7 always did), *Profile name* — the saved
