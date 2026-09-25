@@ -46,6 +46,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The New Tab menu names three shells, not every one the machine has.** A
+  stock macOS box reports nine, so the `+` menu opened on a column of `csh`,
+  `tcsh` and `ksh` that almost nobody runs, above the SSH hosts people came for.
+  The Local section now lists the default shell, always first, and then only
+  shells that have actually been opened, by frecency — three rows at most, the
+  way the SSH section already caps its hosts. The rest sit behind an "Other
+  Shells…" row that opens the command palette filtered to them: every shell is
+  now a palette command, "Shell: {name}", and running one does what its menu
+  row does, splitting instead when ⌥ (Alt) is held. The row is left out when
+  the menu already names the whole list.
+
 - **Saved SSH hosts live in `servers.json`, beside `config.json`** (#911), so
   `config.json` can be synced between machines for its colours and keys
   without carrying a list of servers. `ssh_profiles` and

@@ -107,6 +107,9 @@ pub enum CommandKind {
     ActivateTab(usize),
     ConnectSavedProfile(Uuid),
     EditSavedProfile(Uuid),
+    /// Open the shell the window's inventory lists under this label, as the
+    /// New Tab menu's row for it would.
+    OpenShell(String),
     SaveSshSessionAsHost,
     QuickConnect(String),
     SaveQuickConnect(String),
@@ -222,6 +225,7 @@ impl CommandKind {
             | ActivateTab(_)
             | ConnectSavedProfile(_)
             | EditSavedProfile(_)
+            | OpenShell(_)
             | QuickConnect(_)
             | SaveQuickConnect(_) => return None,
         })
@@ -337,6 +341,7 @@ impl CommandKind {
             | ActivateTab(_)
             | ConnectSavedProfile(_)
             | EditSavedProfile(_)
+            | OpenShell(_)
             | SaveSshSessionAsHost
             | QuickConnect(_)
             | SaveQuickConnect(_) => return None,
