@@ -22,6 +22,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already sends, so a remote repository gets them unchanged. Searching the
   diff text itself is not part of this.
 
+### Fixed
+
+- **Nerd Font icons from a fallback font come out at the text's size** (#866).
+  With a Nerd Font icon face such as Symbols Nerd Font Mono behind a primary
+  that lacks the icons, an icon followed by a space on the same background —
+  every icon in a coloured Powerline or p10k segment — was held to one cell
+  and shrunk to about two thirds of the text's height. Icons with a plain
+  space after them were already drawn full size, so one prompt had icons in
+  two sizes. A lone Private Use Area glyph supplied by a fallback face is now
+  fitted, aspect ratio kept, to its cells and one em of height, taking the
+  blank after it when that blank paints no background or the icon's own and
+  when doing so makes it bigger, and centred in the row; a face whose icons
+  ink less than a cell grows (at most 2×). The Powerline separators, CJK,
+  emoji, other text and the primary font's own icons are drawn as before.
+  Not on Linux, where the text system reports a glyph's advance box rather
+  than its ink.
+
 ## [26.9.3] - 2026-09-23
 
 ### Added
