@@ -1014,6 +1014,7 @@ l10n_keys! {
     AppMenuCopyWorkingDirectory,
     AppMenuCopySessionId,
     AppMenuForkSession,
+    AppMenuSaveAgentLaunchArgs,
     AppMenuClosePaneTab,
     AppMenuCloseOtherTabs,
     AppMenuCloseTabsRight,
@@ -1073,6 +1074,7 @@ l10n_keys! {
     TabMenuLocalShells,
     TabMenuAddHost,
     TabMenuAllHosts,
+    TabMenuLaunchAgent,
     TabMenuOtherShells,
     TabMenuSplitHint,
     TabUnnamedShell,
@@ -1232,6 +1234,8 @@ l10n_keys! {
     CmdCopyWorkingDirectory,
     CmdCopySessionId,
     CmdCopySessionIdSubtitle,
+    CmdNewAgentTab,
+    CmdNewAgentTabSubtitle,
     CmdForkSession,
     CmdForkSessionSubtitle,
     CmdMarkTabAsUnread,
@@ -1363,6 +1367,11 @@ l10n_keys! {
     AppPaneNoKnownDirectory,
     AppNoUncommittedChanges,
     AppCmdSshProfileTitle,
+    AppCmdAgentLaunchTitle,
+    AppNoAgentOnPath,
+    AppNoAgentSeenHere,
+    AppAgentLaunchSaved,
+    AppAgentLaunchArgsUnknown,
     AppCmdShellTitle,
     AppCmdSwitchToTab,
     AppPlaceholderDescription,
@@ -1666,6 +1675,9 @@ mod tests {
             // translation here would be less clear, not more.
             L10nKey::SettingsShell,
             L10nKey::CmdGroupAgents,
+            // The quick-launch rows, which the New Tab menu finds by typing
+            // this one word into the palette in every locale.
+            L10nKey::AppCmdAgentLaunchTitle,
         ];
 
         for &key in KEPT_IN_ENGLISH {

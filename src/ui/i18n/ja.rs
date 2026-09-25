@@ -1589,6 +1589,8 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::CmdCopyWorkingDirectory => "作業ディレクトリをコピー",
         L10nKey::CmdCopySessionId => "セッション ID をコピー",
         L10nKey::CmdCopySessionIdSubtitle => "コーディングエージェント自身のセッション ID",
+        L10nKey::CmdNewAgentTab => "新しいエージェントタブ",
+        L10nKey::CmdNewAgentTabSubtitle => "最後に使ったコーディングエージェントを新しいタブで開く",
         L10nKey::CmdForkSession => "セッションをフォーク",
         L10nKey::CmdForkSessionSubtitle => "このエージェントのセッションを新しいタブにフォーク",
         L10nKey::CmdMarkTabAsUnread => "タブを未読としてマーク",
@@ -1760,6 +1762,13 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
             "{cwd} に未コミットの変更はありません（または git リポジトリではありません）"
         }
         L10nKey::AppCmdSshProfileTitle => "SSH: {title}",
+        L10nKey::AppCmdAgentLaunchTitle => "Agent: {name}",
+        L10nKey::AppNoAgentOnPath => "このマシンの PATH にコーディングエージェントが見つかりません",
+        L10nKey::AppNoAgentSeenHere => {
+            "このワークスペースではまだコーディングエージェントが実行されていません — 一度手動で起動すると、ここに表示されます"
+        }
+        L10nKey::AppAgentLaunchSaved => "{name} は今後このコマンドで起動します: {command}",
+        L10nKey::AppAgentLaunchArgsUnknown => "{name} は起動時の引数を報告していません",
         L10nKey::AppCmdShellTitle => "Shell: {title}",
         L10nKey::AppCmdSwitchToTab => "タブに切り替え: {label}",
         L10nKey::AppPlaceholderDescription => "説明",
@@ -1923,6 +1932,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::AppMenuCopyWorkingDirectory => "作業ディレクトリをコピー",
         L10nKey::AppMenuCopySessionId => "セッション ID をコピー",
         L10nKey::AppMenuForkSession => "セッションをフォーク",
+        L10nKey::AppMenuSaveAgentLaunchArgs => "現在の起動引数をデフォルトに設定",
         L10nKey::AppMenuClosePaneTab => "閉じる",
         L10nKey::AppMenuCloseOtherTabs => "他のタブを閉じる",
         L10nKey::AppMenuCloseTabsRight => "右側のタブを閉じる",
@@ -1981,6 +1991,7 @@ pub fn translate_ja(key: L10nKey) -> Option<&'static str> {
         L10nKey::TabMenuLocalShells => "ローカル",
         L10nKey::TabMenuAddHost => "SSH ホストを追加…",
         L10nKey::TabMenuAllHosts => "すべての SSH ホスト…",
+        L10nKey::TabMenuLaunchAgent => "エージェントを起動…",
         L10nKey::TabMenuOtherShells => "その他のシェル…",
         L10nKey::TabMenuSplitHint => "{key} を押しながら選ぶと分割",
         L10nKey::TabUnnamedShell => "シェル {n}",
