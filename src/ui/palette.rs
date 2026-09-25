@@ -29,6 +29,8 @@ pub enum CommandKind {
     ClosePane,
     RenameTab,
     NewWorktreeTab,
+    NewGroup,
+    OpenFolderAsGroup,
     CloseOtherTabs,
     CloseTabsToTheRight,
     CopyWorkingDirectory,
@@ -143,6 +145,8 @@ impl CommandKind {
             ClosePane => "close-pane",
             RenameTab => "rename-tab",
             NewWorktreeTab => "new-worktree-tab",
+            NewGroup => "new-sidebar-group",
+            OpenFolderAsGroup => "open-folder-as-group",
             CloseOtherTabs => "close-other-tabs",
             CloseTabsToTheRight => "close-tabs-right",
             CopyWorkingDirectory => "copy-cwd",
@@ -342,6 +346,8 @@ impl CommandKind {
             | SelectAllText
             | SendSelectionToAgent
             | SendGitDiffToAgent
+            | NewGroup
+            | OpenFolderAsGroup
             | UpdateLocalServer
             | UpdateRemoteServer
             | OpenWorkspacePicker

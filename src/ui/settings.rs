@@ -901,7 +901,7 @@ impl SearchEntry {
             L10nKey::SettingsScrollback => "scrollback_limit",
             L10nKey::SettingsNewTabPosition => "new_tab_position",
             L10nKey::SettingsTabBarPosition => "tab_bar_position",
-            L10nKey::SettingsSidebarGrouping => "sidebar_grouping",
+            L10nKey::SettingsSidebarGrouping => "sidebar_auto_grouping",
             L10nKey::SettingsDiffPreviewFromCounts => "sidebar_diff_preview",
             L10nKey::SettingsSshTabTitle => "ssh_tab_title",
             L10nKey::SettingsNotifyOnCommandFinish => "notify_on_command_finish",
@@ -1053,7 +1053,9 @@ impl SearchEntry {
             L10nKey::SettingsScrollback => cfg.scrollback_limit != defaults.scrollback_limit,
             L10nKey::SettingsNewTabPosition => cfg.new_tab_position != defaults.new_tab_position,
             L10nKey::SettingsTabBarPosition => cfg.tab_bar_position != defaults.tab_bar_position,
-            L10nKey::SettingsSidebarGrouping => cfg.sidebar_grouping != defaults.sidebar_grouping,
+            L10nKey::SettingsSidebarGrouping => {
+                cfg.sidebar_auto_grouping != defaults.sidebar_auto_grouping
+            }
             L10nKey::SettingsDiffPreviewFromCounts => {
                 cfg.sidebar_diff_preview != defaults.sidebar_diff_preview
             }
@@ -7691,15 +7693,11 @@ impl Tty7App {
             TabBarPosition::Left => 1,
         };
         let sidebar_diff_preview = cfg.sidebar_diff_preview;
+        let sidebar_auto_grouping = cfg.sidebar_auto_grouping;
         let ssh_tab_title_idx = match cfg.ssh_tab_title {
             SshTabTitle::Dynamic => 0,
             SshTabTitle::ProfileName => 1,
             SshTabTitle::Hostname => 2,
-        };
-        let sidebar_grouping_idx = match cfg.sidebar_grouping {
-            crate::core::config::SidebarGrouping::Repo => 0,
-            crate::core::config::SidebarGrouping::RepoOrDirectory => 1,
-            crate::core::config::SidebarGrouping::None => 2,
         };
         let notify_idx = match cfg.notify_on_command_finish {
             NotifyMode::Never => 0,
@@ -7808,24 +7806,12 @@ impl Tty7App {
             .checked(sidebar_diff_preview)
             .on_click(cx.listener(|this, on: &bool, _w, cx| this.set_sidebar_diff_preview(*on, cx)))
             .into_any_element();
-        let sidebar_grouping_radio = self.segmented(
-            "wt-sidebar-grouping",
-            &[
-                t(L10nKey::SettingsByRepo),
-                t(L10nKey::SettingsByRepoOrFolder),
-                t(L10nKey::SettingsFlat),
-            ],
-            sidebar_grouping_idx,
-            cx,
-            |this, ix, _w, cx| {
-                let grouping = match ix {
-                    0 => crate::core::config::SidebarGrouping::Repo,
-                    1 => crate::core::config::SidebarGrouping::RepoOrDirectory,
-                    _ => crate::core::config::SidebarGrouping::None,
-                };
-                this.set_sidebar_grouping(grouping, cx);
-            },
-        );
+        let sidebar_grouping_switch = crate::ui::theme::switch("wt-sidebar-auto-grouping", cx)
+            .checked(sidebar_auto_grouping)
+            .on_click(
+                cx.listener(|this, on: &bool, _w, cx| this.set_sidebar_auto_grouping(*on, cx)),
+            )
+            .into_any_element();
 
         let ssh_tab_title_radio = self.segmented(
             "wt-ssh-tab-title",
@@ -7892,7 +7878,7 @@ impl Tty7App {
                     .child(self.settings_row(
                         t(L10nKey::SettingsSidebarGrouping),
                         t(L10nKey::SettingsSidebarGroupingDesc),
-                        sidebar_grouping_radio,
+                        sidebar_grouping_switch,
                         cx,
                     ))
                     .child(self.settings_row(
@@ -9938,7 +9924,7 @@ mod tests {
             "Terminal bell",
             "Report mouse to apps",
             "Open files with",
-            "Sidebar grouping",
+            "Auto grouping",
             "Tab completion",
             "Command history search",
             "Dim inactive panes",

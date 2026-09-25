@@ -782,9 +782,15 @@ fn run_request(
             workspace,
             tab,
             group,
+            last_auto,
         } => {
             conn.machine()?
-                .tab_set_group(workspace, tab, group, conn.machine_origin)?;
+                .tab_set_group(workspace, tab, group, last_auto, conn.machine_origin)?;
+            (ReplyOk::Unit, Vec::new())
+        }
+        ControlRequest::WorkspaceSetGroups { workspace, groups } => {
+            conn.machine()?
+                .workspace_set_groups(workspace, groups, conn.machine_origin)?;
             (ReplyOk::Unit, Vec::new())
         }
         ControlRequest::TabSetHibernated {

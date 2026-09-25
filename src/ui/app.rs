@@ -405,7 +405,19 @@ pub struct Tab {
     pub(crate) zoomed: Option<Entity<TerminalView>>,
     pub(crate) diff_overlay: Option<crate::ui::diff_overlay::DiffOverlayState>,
     pub(crate) code: Option<Box<crate::ui::code_editor::TabCode>>,
-    pub(crate) sidebar_group: std::cell::RefCell<Option<crate::core::group_key::GroupKey>>,
+    /// The pinned sidebar group this tab was put in, by id, or `None` to
+    /// leave it to auto grouping. A `Cell` because the sidebar files a tab
+    /// that walks into a pinned folder while it is working out where to draw
+    /// it, which it does from `&self`.
+    pub(crate) group: std::cell::Cell<Option<crate::core::group_key::GroupId>>,
+    /// The auto group this tab last resolved to. Stored nowhere — an auto
+    /// group is derived — but remembered here so a tab whose repo probe is
+    /// still in flight stays where it was instead of bouncing through
+    /// Ungrouped for the frames the probe takes.
+    pub(crate) auto_group: std::cell::RefCell<Option<crate::core::group_key::AutoKey>>,
+    /// Which pinned folder this tab was last seen inside, so it joins one only
+    /// on the way *in* — see [`crate::core::group_key::EntryWatch`].
+    pub(crate) folder_watch: std::cell::Cell<crate::core::group_key::EntryWatch>,
     pub(crate) overlay_top: OverlayTop,
     /// Whether this tab's document fills the workspace or docks beside the
     /// terminal, once the tab has been told. `None` follows `document_layout`
@@ -478,7 +490,9 @@ impl Tab {
             code: None,
             overlay_top: OverlayTop::default(),
             document_layout: None,
-            sidebar_group: std::cell::RefCell::new(None),
+            group: std::cell::Cell::new(None),
+            auto_group: std::cell::RefCell::new(None),
+            folder_watch: std::cell::Cell::new(crate::core::group_key::EntryWatch::fresh()),
             tree_id: std::cell::Cell::new(tty7_core::core::machine::TabId::new()),
             last_used: std::cell::Cell::new(0),
             focus_origin: Default::default(),
@@ -496,11 +510,13 @@ impl Tab {
             code: None,
             overlay_top: OverlayTop::default(),
             document_layout: None,
-            sidebar_group: std::cell::RefCell::new(
-                tree.sidebar_group
-                    .as_deref()
-                    .and_then(crate::core::group_key::GroupKey::decode),
-            ),
+            group: std::cell::Cell::new(tree.group),
+            auto_group: std::cell::RefCell::new(tree.last_auto.clone()),
+            // Only ever built for a tab that was just created elsewhere — by
+            // `tty7 tab new`, or another window — so it is as new as one
+            // opened here: opened inside a pinned folder, it joins it. Every
+            // window that hears of it reaches the same answer.
+            folder_watch: std::cell::Cell::new(crate::core::group_key::EntryWatch::fresh()),
             tree_id: std::cell::Cell::new(tree.id),
             last_used: std::cell::Cell::new(0),
             focus_origin: Default::default(),
@@ -798,13 +814,9 @@ pub(crate) struct WorkspaceRename {
 }
 
 pub(crate) struct GroupRename {
-    /// The group being renamed, by the key it had when the box opened.
-    ///
-    /// A custom group *is* its name — there is no group record anywhere for
-    /// an id to point at, only the tabs that claim it. So renaming one means
-    /// rewriting every tab that says the old name, and this is what says
-    /// which those are.
-    pub(crate) key: crate::core::group_key::GroupKey,
+    /// The pinned group being renamed. By id, so a rename that lands after
+    /// another window reordered or renamed the groups still names this one.
+    pub(crate) group: crate::core::group_key::GroupId,
     pub(crate) input: Entity<InputState>,
     pub(crate) _subs: Vec<Subscription>,
 }
@@ -962,12 +974,21 @@ pub struct Tty7App {
     /// the sidebar — and takes no part in the reading.
     pub(crate) strip_slots: Rc<RefCell<Vec<Bounds<Pixels>>>>,
     pub(crate) sidebar_slots: Rc<RefCell<Vec<Bounds<Pixels>>>>,
-    /// Where each custom group's block was drawn last frame, so a tab held
-    /// over one can be told which group it is over. Only custom groups are
-    /// here: a repo group's membership is decided by cwd, so dropping a tab
+    /// Where each pinned group's block was drawn last frame, so a tab held
+    /// over one can be told which group it is over. Only pinned groups are
+    /// here: an auto group's membership is decided by cwd, so dropping a tab
     /// into one has no meaning to record.
     pub(crate) sidebar_group_slots:
-        Rc<RefCell<Vec<(crate::core::group_key::GroupKey, Bounds<Pixels>)>>>,
+        Rc<RefCell<Vec<(crate::core::group_key::GroupId, Bounds<Pixels>)>>>,
+    /// Where the divider between the pinned groups and the rest was drawn
+    /// last frame. Everything below it is auto grouping's: a tab dropped
+    /// there leaves its pinned group, and an auto group's header lifted
+    /// above it is pinned.
+    pub(crate) sidebar_divider: Rc<Cell<Option<Bounds<Pixels>>>>,
+    /// This workspace's pinned groups and folds, as the machine tree holds
+    /// them. Adopted from every pull and every `GroupsChanged`, and pushed
+    /// back as one `WorkspaceSetGroups` whenever this window edits it.
+    pub(crate) sidebar_groups: crate::core::group_key::WorkspaceGroups,
     /// Where the active tab's panes were last drawn, which is the frame of
     /// reference a drag's landing is worked out in.
     pub(crate) pane_area: Rc<Cell<Option<Bounds<Pixels>>>>,
@@ -1579,6 +1600,8 @@ impl Tty7App {
             strip_slots: Rc::new(RefCell::new(Vec::new())),
             sidebar_slots: Rc::new(RefCell::new(Vec::new())),
             sidebar_group_slots: Rc::new(RefCell::new(Vec::new())),
+            sidebar_divider: Rc::new(Cell::new(None)),
+            sidebar_groups: Default::default(),
             pane_area: Rc::new(Cell::new(None)),
             sidebar_search,
             _sidebar_search_sub: sidebar_search_sub,
@@ -1938,7 +1961,11 @@ impl Tty7App {
                 code: None,
                 overlay_top: OverlayTop::default(),
                 document_layout: None,
-                sidebar_group: std::cell::RefCell::new(st.sidebar_group),
+                group: std::cell::Cell::new(st.group),
+                auto_group: std::cell::RefCell::new(st.last_auto),
+                // Reopened here, so it is this window's new tab: walking into
+                // a pinned folder files it there like any other.
+                folder_watch: std::cell::Cell::new(crate::core::group_key::EntryWatch::fresh()),
                 tree_id: std::cell::Cell::new(tty7_core::core::machine::TabId::new()),
                 last_used: std::cell::Cell::new(0),
                 focus_origin: Default::default(),
@@ -3584,12 +3611,8 @@ impl Tty7App {
         self.update_config(cx, |cfg| cfg.tab_bar_position = pos);
     }
 
-    pub(crate) fn set_sidebar_grouping(
-        &mut self,
-        grouping: crate::core::config::SidebarGrouping,
-        cx: &mut Context<Self>,
-    ) {
-        self.update_config(cx, |cfg| cfg.sidebar_grouping = grouping);
+    pub(crate) fn set_sidebar_auto_grouping(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.update_config(cx, |cfg| cfg.sidebar_auto_grouping = on);
     }
 
     pub(crate) fn set_sidebar_diff_preview(&mut self, on: bool, cx: &mut Context<Self>) {
@@ -4077,9 +4100,7 @@ impl Tty7App {
         self.maximized = None;
         let insert_at = self.new_tab_insert_at(cx);
         let new_tab = Tab::new(Pane::leaf(tab.clone()));
-        if let Some(group) = group {
-            *new_tab.sidebar_group.borrow_mut() = group;
-        }
+        group.seat(&new_tab);
         self.tabs.insert(insert_at, new_tab);
         self.active = insert_at;
         self.focus_active(window, cx);
@@ -4749,9 +4770,7 @@ impl Tty7App {
             .and_then(|view| view.read(cx).spawnable_cwd());
         let group = self.spawn_group(cwd.as_deref(), cx);
         let fresh = Tab::new(crate::ui::pane::Pane::leaf(slot));
-        if let Some(group) = group {
-            *fresh.sidebar_group.borrow_mut() = group;
-        }
+        group.seat(&fresh);
         let at = at.min(self.tabs.len());
         self.tabs.insert(at, fresh);
         self.maximized = None;
@@ -5415,9 +5434,7 @@ impl Tty7App {
                 self.maximized = None;
                 let insert_at = self.new_tab_insert_at(cx);
                 let tab = Tab::new(Pane::leaf(new));
-                if let Some(group) = group {
-                    *tab.sidebar_group.borrow_mut() = group;
-                }
+                group.seat(&tab);
                 self.tabs.insert(insert_at, tab);
                 self.active = insert_at;
                 self.focus_active(window, cx);
@@ -5765,6 +5782,32 @@ impl Tty7App {
         // saved host has nothing to save, and a pane that is not an SSH one has
         // no connection at all — either would be a row that quietly did nothing
         // (#549).
+        // Groups are something the sidebar draws, so they are offered only
+        // while the tabs are in it. Opening a folder as a group asks the
+        // system picker, which browses this computer: a path picked there
+        // names nothing on a remote workspace's machine, where "Pin as
+        // Group" in the file tree is the way in instead.
+        if cx.global::<Config>().tab_bar_position == TabBarPosition::Left {
+            commands.push(
+                Command::localized(L10nKey::CmdNewGroup, CommandKind::NewGroup)
+                    .with_subtitle(t(L10nKey::CmdNewGroupSubtitle))
+                    .in_group(CommandGroup::TabsPanes),
+            );
+            if !WorkspaceStore::all(cx)
+                .get(self.workspace)
+                .is_some_and(|w| w.is_remote())
+            {
+                commands.push(
+                    Command::localized(
+                        L10nKey::CmdOpenFolderAsGroup,
+                        CommandKind::OpenFolderAsGroup,
+                    )
+                    .with_subtitle(t(L10nKey::CmdOpenFolderAsGroupSubtitle))
+                    .in_group(CommandGroup::TabsPanes),
+                );
+            }
+        }
+
         if self.unsaved_ssh_session(window, cx).is_some() {
             commands.push(
                 Command::localized(
@@ -5984,6 +6027,8 @@ impl Tty7App {
             ReopenClosedTab => self.reopen_closed_tab(window, cx),
             RenameTab => self.start_rename(self.active, window, cx),
             NewWorktreeTab => self.new_worktree_tab(self.active, window, cx),
+            NewGroup => self.new_empty_group(window, cx),
+            OpenFolderAsGroup => self.open_folder_as_group(cx),
             CloseOtherTabs => self.close_other_tabs(self.active, window, cx),
             CloseTabsToTheRight => self.close_tabs_right_of(self.active, window, cx),
             CopyWorkingDirectory => self.copy_active_cwd(window, cx),
@@ -6182,7 +6227,7 @@ impl Tty7App {
                 self.set_tab_bar_position(defaults.tab_bar_position, cx)
             }
             L10nKey::SettingsSidebarGrouping => {
-                self.set_sidebar_grouping(defaults.sidebar_grouping, cx)
+                self.set_sidebar_auto_grouping(defaults.sidebar_auto_grouping, cx)
             }
             L10nKey::SettingsDiffPreviewFromCounts => {
                 self.set_sidebar_diff_preview(defaults.sidebar_diff_preview, cx)
@@ -8639,6 +8684,9 @@ impl Render for Tty7App {
         // terminal grid, sized in absolute px from `font_size`, does not move.
         window.set_rem_size(px(cx.global::<Config>().ui_font_size));
         self.claim_pending_tab(window, cx);
+        // Before anything asks where a tab is drawn: a tab that walked into a
+        // pinned folder since the last frame is filed there on this one.
+        self.settle_sidebar_groups(cx);
         self.touch_active_tab();
         self.declare_displayed_panes(cx);
         self.scm_sync_watchers(window, cx);
@@ -8655,14 +8703,23 @@ impl Render for Tty7App {
             let landed = crate::ui::reorder::take_landed(&self.reorder);
             if let Some((tab, zone)) = self.tab_merge.take() {
                 self.merge_tab(tab, zone, window, cx);
-            } else if let Some((tab, key)) = landed.regroup {
+            } else if let Some((tab, target)) = landed.regroup {
                 // A drop into another group outranks the reordering the drag
                 // did on its way out of the one it came from. The pointer
                 // left that group; the shuffle it caused before leaving is
                 // not what was being asked for.
-                self.regroup_tab(tab, key, cx);
+                self.regroup_tab(tab, target, cx);
+            } else if let Some(key) = landed.pin {
+                // The same for a header let go above the divider: it was
+                // carried there to be pinned, not to be reordered on the way.
+                self.pin_auto_group(key, cx);
             } else if let Some(order) = landed.order {
-                self.apply_tab_order(&order, cx);
+                match landed.surface {
+                    Some(crate::ui::reorder::Surface::PinnedGroups) => {
+                        self.apply_pinned_order(&order, cx)
+                    }
+                    _ => self.apply_tab_order(&order, cx),
+                }
             }
             // Also what ends the pane drag, so it is taken whichever of the two
             // readings the last frame left behind.
@@ -9437,7 +9494,8 @@ fn tab_to_session(tab: &Tab, cx: &App) -> SessionTab {
             Some(layout) => layout.clone(),
             None => pane_to_session(&tab.pane, cx),
         },
-        sidebar_group: tab.sidebar_group.borrow().clone(),
+        group: tab.group.get(),
+        last_auto: tab.auto_group.borrow().clone(),
         tree_id: None,
         hibernated: false,
         asleep_view: None,
@@ -9652,7 +9710,11 @@ fn tabs_from_session(
             code: None,
             overlay_top: OverlayTop::default(),
             document_layout: None,
-            sidebar_group: std::cell::RefCell::new(st.sidebar_group.clone()),
+            group: std::cell::Cell::new(st.group),
+            // The hint the tree kept: the tab is drawn in its auto group from
+            // the first frame, not parked in Ungrouped until its probe lands.
+            auto_group: std::cell::RefCell::new(st.last_auto.clone()),
+            folder_watch: std::cell::Cell::new(crate::core::group_key::EntryWatch::baseline()),
             tree_id: std::cell::Cell::new(
                 st.tree_id
                     .unwrap_or_else(tty7_core::core::machine::TabId::new),
@@ -9671,7 +9733,8 @@ fn tabs_from_session(
 fn asleep_tab(st: &SessionTab, home: Option<std::path::PathBuf>) -> Tab {
     let mut tab = Tab::new(Pane::Empty);
     tab.name = st.name.clone();
-    *tab.sidebar_group.borrow_mut() = st.sidebar_group.clone();
+    tab.group.set(st.group);
+    *tab.auto_group.borrow_mut() = st.last_auto.clone();
     if let Some(id) = st.tree_id {
         tab.tree_id.set(id);
     }
@@ -11548,7 +11611,8 @@ mod ssh_rebuild_gpui_tests {
             let tab = TreeTab {
                 id: app.tabs[0].tree_id.get(),
                 name: None,
-                sidebar_group: None,
+                group: None,
+                last_auto: None,
                 root: PaneNode::Leaf { pane: 1 },
                 hibernated: false,
             };

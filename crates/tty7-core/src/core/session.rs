@@ -50,8 +50,13 @@ pub struct SessionTab {
     #[serde(default)]
     pub name: Option<String>,
     pub pane: SessionPane,
+    /// The pinned sidebar group the tab was in. Carried so a tab reopened
+    /// with ⌘⇧T goes back where it was, when that group is still there.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sidebar_group: Option<crate::core::group_key::GroupKey>,
+    pub group: Option<crate::core::group_key::GroupId>,
+    /// The auto group the tab last resolved to, drawn until a probe answers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_auto: Option<crate::core::group_key::AutoKey>,
     #[serde(skip)]
     pub tree_id: Option<crate::core::machine::TabId>,
     /// Asleep in the tree: comes back as a placeholder holding `pane`, and

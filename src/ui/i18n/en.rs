@@ -612,9 +612,9 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::SettingsTabBarPositionDesc => {
             "Show tabs as a horizontal strip on top or a vertical sidebar on the left."
         }
-        L10nKey::SettingsSidebarGrouping => "Sidebar grouping",
+        L10nKey::SettingsSidebarGrouping => "Auto grouping",
         L10nKey::SettingsSidebarGroupingDesc => {
-            "Group sidebar tabs by git repository. Tabs outside a repo collect under Scratch, or under their working directory with \"By repo or folder\". Left sidebar only."
+            "Group unpinned sidebar tabs by git repository, and SSH tabs by host. Pinned groups always show. Left sidebar only."
         }
         L10nKey::SettingsDiffPreviewFromCounts => "Open diff preview from sidebar counts",
         L10nKey::SettingsDiffPreviewFromCountsDesc => {
@@ -649,9 +649,6 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::SettingsAtEnd => "At end",
         L10nKey::SettingsTop => "Top",
         L10nKey::SettingsLeft => "Left",
-        L10nKey::SettingsByRepo => "By repo",
-        L10nKey::SettingsByRepoOrFolder => "By repo or folder",
-        L10nKey::SettingsFlat => "Flat",
         L10nKey::SettingsPreset => "Preset",
         L10nKey::SettingsPresetDesc => {
             "tmux remaps pane/tab actions onto prefix sequences (e.g. Ctrl-B then C)."
@@ -948,7 +945,7 @@ pub fn translate_en(key: L10nKey) -> &'static str {
             "tray menu bar status item agent attention system icon"
         }
         L10nKey::SettingsSearchSidebarGroupingKeywords => {
-            "tabs group repo repository git scratch header sidebar flat folder directory cwd"
+            "tabs group grouping auto repo repository git ssh host pinned pin ungrouped header sidebar flat folder"
         }
         L10nKey::SettingsSearchSshTabTitleKeywords => {
             "ssh tab title name host hostname profile alias pin fixed osc remote"
@@ -1071,6 +1068,7 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         }
         L10nKey::FileTreeContextOpen => "Open",
         L10nKey::FileTreeContextCdHere => "cd Here",
+        L10nKey::FileTreeContextPinAsGroup => "Pin as Group",
         L10nKey::FileTreeContextInsertPath => "Insert Path in Terminal",
         L10nKey::FileTreeContextAttachAgent => "Attach to Agent",
         L10nKey::FileTreeContextNewFile => "New File",
@@ -1502,6 +1500,10 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::CmdNewWindow => "New Window",
         L10nKey::CmdNewWorktreeTab => "New Worktree Tab…",
         L10nKey::CmdNewWorktreeTabSubtitle => "isolated checkout on a fresh branch",
+        L10nKey::CmdNewGroup => "New Group",
+        L10nKey::CmdNewGroupSubtitle => "an empty pinned group in the sidebar",
+        L10nKey::CmdOpenFolderAsGroup => "Open Folder as Group…",
+        L10nKey::CmdOpenFolderAsGroupSubtitle => "pin a folder; tabs opened in it join",
         L10nKey::CmdRenameTab => "Rename Tab…",
         L10nKey::CmdSplitRight => "Split Right",
         L10nKey::CmdSplitDown => "Split Down",
@@ -1924,12 +1926,19 @@ pub fn translate_en(key: L10nKey) -> &'static str {
         L10nKey::TabMenuSplitHint => "Hold {key} to split",
         L10nKey::TabUnnamedShell => "Shell {n}",
         L10nKey::ShellDefault => "default",
-        L10nKey::SidebarScratchGroup => "Scratch",
+        L10nKey::SidebarUngroupedGroup => "Ungrouped",
         L10nKey::SidebarMoveToGroup => "Move to Group",
         L10nKey::SidebarNewGroup => "New Group…",
-        L10nKey::SidebarAutoGroup => "Group Automatically",
         L10nKey::SidebarNewGroupName => "New Group",
         L10nKey::SidebarRenameGroup => "Rename Group",
+        L10nKey::SidebarPinGroup => "Pin Group",
+        L10nKey::SidebarUnpinGroup => "Unpin",
+        L10nKey::SidebarGroupNewTab => "New Tab",
+        L10nKey::SidebarSetGroupFolder => "Set Folder…",
+        L10nKey::SidebarUseCurrentTabFolder => "Use Current Tab's Folder",
+        L10nKey::SidebarClearGroupFolder => "Clear Folder",
+        L10nKey::SidebarDeleteGroup => "Delete Group",
+        L10nKey::SidebarDropToPin => "Drop here to pin",
         L10nKey::TabContextCloseTab => "Close Tab",
         L10nKey::TabContextCloseTabsBelow => "Close Tabs Below",
         L10nKey::AppAgentHooksOpFailed => "Failed: {error}",

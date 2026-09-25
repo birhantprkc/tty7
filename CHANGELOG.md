@@ -66,6 +66,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The sidebar groups tabs by repo automatically; pin what you want to keep**
+  (#955). Groups now come in two halves, split by a divider. Below it, every
+  tab you have not pinned is filed under its git repository, and an SSH tab
+  under the host it is on rather than its remote path — `/home/ubuntu` on two
+  machines used to share a header. Above it sit the groups you keep, in the
+  order you drag them into, until you delete them. A pinned group can keep a
+  folder: a tab whose working directory enters it joins it (the deepest folder
+  wins when they nest, and a worktree of a pinned repo counts), while a tab you
+  drag out stays out until it leaves the folder and comes back. Pin an auto
+  group with the pin on its header or by dragging the header above the
+  divider; pin a folder by dropping it from Finder, with **Pin as Group** in the
+  Files panel, or with **Open Folder as Group…** in the palette. **New Group**
+  in the palette or on a tab's right-click makes a label group. Deleting a
+  group closes nothing — its tabs go back to auto grouping — and dragging a tab
+  below the divider does the same for one tab. Groups, their order and which
+  are folded are stored with the workspace, so every window onto it agrees.
+  **Settings → Window & Tabs → Auto grouping** replaces the three-way *Sidebar
+  grouping* choice; off, unpinned tabs sit in one flat list under the pinned
+  groups. Scratch is now **Ungrouped**.
+
 - **The New Tab menu names three shells, not every one the machine has.** A
   stock macOS box reports nine, so the `+` menu opened on a column of `csh`,
   `tcsh` and `ksh` that almost nobody runs, above the SSH hosts people came for.
@@ -124,6 +144,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tree is remembered in the config. Both are built from the status the host
   already sends, so a remote repository gets them unchanged. Searching the
   diff text itself is not part of this.
+
+### Removed
+
+- **The *By repo or folder* grouping mode, "Group Automatically", and groups
+  stored by name.** A folder you want grouped is pinned instead, and dragging a
+  tab below the divider is the way back to automatic grouping. Hand-made groups
+  and folds from earlier versions are not carried over. The control dialect
+  moves to v11, so each remote host needs one Update Server, which ends the
+  sessions on it.
 
 ### Fixed
 

@@ -494,7 +494,8 @@ mod tests {
         let tab = SessionTab {
             name: Some("build".into()),
             tree_id: None,
-            sidebar_group: None,
+            group: None,
+            last_auto: None,
             hibernated: false,
             asleep_view: None,
             pane: leaf(Some("/work/getty")),
@@ -507,7 +508,8 @@ mod tests {
         let tab = SessionTab {
             name: None,
             tree_id: None,
-            sidebar_group: None,
+            group: None,
+            last_auto: None,
             hibernated: false,
             asleep_view: None,
             pane: leaf(Some("/work/getty")),
@@ -517,7 +519,8 @@ mod tests {
         let tab = SessionTab {
             name: Some("   ".into()),
             tree_id: None,
-            sidebar_group: None,
+            group: None,
+            last_auto: None,
             hibernated: false,
             asleep_view: None,
             pane: leaf(Some("/work/getty")),
@@ -530,7 +533,8 @@ mod tests {
         let tab = SessionTab {
             name: None,
             tree_id: None,
-            sidebar_group: None,
+            group: None,
+            last_auto: None,
             hibernated: false,
             asleep_view: None,
             pane: SessionPane::Split {
@@ -548,7 +552,8 @@ mod tests {
         let unnamed = SessionTab {
             name: None,
             tree_id: None,
-            sidebar_group: None,
+            group: None,
+            last_auto: None,
             hibernated: false,
             asleep_view: None,
             pane: leaf(None),
@@ -557,7 +562,8 @@ mod tests {
         let root = SessionTab {
             name: None,
             tree_id: None,
-            sidebar_group: None,
+            group: None,
+            last_auto: None,
             hibernated: false,
             asleep_view: None,
             pane: leaf(Some("/")),
@@ -570,7 +576,8 @@ mod tests {
         let tab = SessionTab {
             name: Some("a".repeat(40)),
             tree_id: None,
-            sidebar_group: None,
+            group: None,
+            last_auto: None,
             hibernated: false,
             asleep_view: None,
             pane: leaf(None),
